@@ -300,7 +300,7 @@ try {
                <?php if (isset($demo_users['admins']) && !empty($demo_users['admins'])): ?>
                 'admin': {
                     email: '<?php echo htmlspecialchars($demo_users['admins'][0]['email']); ?>',
-                    password: 'Mithila12'
+                    password: 'adeeb123'
                 },
                 <?php endif; ?>
                 <?php if (isset($demo_users['user'])): ?>
