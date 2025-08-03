@@ -19,10 +19,22 @@ try {
     
     $phone_column = in_array('phone', $doctor_columns) ? 'phone' : 'contact';
     
+    // Check if address column exists
+    $has_address = in_array('address', $doctor_columns);
+    $has_latitude = in_array('latitude', $doctor_columns);
+    $has_longitude = in_array('longitude', $doctor_columns);
+    $has_location_id = in_array('location_id', $doctor_columns);
+    
+    $address_field = $has_address ? 'd.address' : 'NULL as address';
+    $latitude_field = $has_latitude ? 'd.latitude' : 'NULL as latitude';
+    $longitude_field = $has_longitude ? 'd.longitude' : 'NULL as longitude';
+    $location_join = $has_location_id ? 'LEFT JOIN locations l ON d.location_id = l.location_id' : '';
+    $location_city = $has_location_id ? 'l.city as location_city' : 'NULL as location_city';
+    
     $stmt = $pdo->prepare("
-        SELECT d.*, $phone_column as phone, l.city as location_city, d.address, d.latitude, d.longitude
+        SELECT d.*, $phone_column as phone, $location_city, $address_field, $latitude_field, $longitude_field
         FROM doctors d
-        LEFT JOIN locations l ON d.location_id = l.location_id
+        $location_join
         ORDER BY d.name
     ");
     $stmt->execute();

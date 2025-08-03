@@ -15,6 +15,12 @@ $patient_stats = [];
 $doctor_stats = [];
 $error_message = "";
 
+// Initialize variables with default values
+$total_revenue = 0;
+$current_month_appointments = 0;
+$total_patients = 0;
+$total_doctors = 0;
+
 try {
     // Check if appointments table has the new column names
     $result = $pdo->query("DESCRIBE appointments");
@@ -30,14 +36,15 @@ try {
         ORDER BY month
     ")->fetchAll(PDO::FETCH_ASSOC);
     
-    // Check if medicalrecords table has record_date column
+    // Check if medicalrecords table has record_date column and cost/bills column
     $result = $pdo->query("DESCRIBE medicalrecords");
     $medical_columns = $result->fetchAll(PDO::FETCH_COLUMN);
     $record_date_column = in_array('record_date', $medical_columns) ? 'record_date' : 'date';
+    $cost_column = in_array('cost', $medical_columns) ? 'cost' : 'bills';
     
     // Get revenue data
     $revenue_data = $pdo->query("
-        SELECT MONTH($record_date_column) as month, SUM(cost) as total_revenue
+        SELECT MONTH($record_date_column) as month, SUM($cost_column) as total_revenue
         FROM medicalrecords 
         WHERE YEAR($record_date_column) = YEAR(CURDATE())
         GROUP BY MONTH($record_date_column)
@@ -64,6 +71,11 @@ try {
     // Calculate total revenue
     $total_revenue = array_sum(array_column($revenue_data, 'total_revenue'));
     
+    // If no revenue data, get total from medicalrecords table
+    if ($total_revenue == 0) {
+        $total_revenue = $pdo->query("SELECT SUM($cost_column) FROM medicalrecords")->fetchColumn() ?? 0;
+    }
+    
     // Get total appointments this month
     $current_month_appointments = $pdo->query("
         SELECT COUNT(*) as count
@@ -79,6 +91,11 @@ try {
     
 } catch(PDOException $e) {
     $error_message = "Database error: " . $e->getMessage();
+    // Ensure variables have default values even if database fails
+    $total_revenue = $total_revenue ?? 0;
+    $current_month_appointments = $current_month_appointments ?? 0;
+    $total_patients = $total_patients ?? 0;
+    $total_doctors = $total_doctors ?? 0;
 }
 ?>
 

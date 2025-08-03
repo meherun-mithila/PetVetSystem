@@ -78,11 +78,21 @@ if ($_POST) {
 
 // Get user's pets
 try {
-    $stmt = $pdo->prepare("SELECT * FROM patients WHERE owner_id = ? ORDER BY created_at DESC");
+    // Check if patients table has the required columns
+    $result = $pdo->query("DESCRIBE patients");
+    $patient_columns = $result->fetchAll(PDO::FETCH_COLUMN);
+    
+    $has_created_at = in_array('created_at', $patient_columns);
+    $has_weight = in_array('weight', $patient_columns);
+    $has_color = in_array('color', $patient_columns);
+    
+    $order_by = $has_created_at ? 'created_at DESC' : 'patient_id DESC';
+    
+    $stmt = $pdo->prepare("SELECT * FROM patients WHERE owner_id = ? ORDER BY $order_by");
     $stmt->execute([$user_id]);
     $pets = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch(PDOException $e) {
-    $error_message = "Failed to load pets.";
+    $error_message = "Failed to load pets: " . $e->getMessage();
 }
 ?>
 
@@ -237,11 +247,11 @@ try {
                         </div>
                     </div>
                     <div class="space-y-2 text-sm text-gray-600">
-                        <p><strong>Breed:</strong> <?php echo htmlspecialchars($pet['breed'] ?: 'Not specified'); ?></p>
-                        <p><strong>Age:</strong> <?php echo htmlspecialchars($pet['age']); ?> years</p>
-                        <p><strong>Weight:</strong> <?php echo htmlspecialchars($pet['weight']); ?> kg</p>
-                        <p><strong>Color:</strong> <?php echo htmlspecialchars($pet['color'] ?: 'Not specified'); ?></p>
-                        <p><strong>Registered:</strong> <?php echo date('M j, Y', strtotime($pet['created_at'])); ?></p>
+                        <p><strong>Breed:</strong> <?php echo htmlspecialchars($pet['breed'] ?? 'Not specified'); ?></p>
+                        <p><strong>Age:</strong> <?php echo htmlspecialchars($pet['age'] ?? 'Not specified'); ?> years</p>
+                        <p><strong>Weight:</strong> <?php echo htmlspecialchars($pet['weight'] ?? 'Not specified'); ?> kg</p>
+                        <p><strong>Color:</strong> <?php echo htmlspecialchars($pet['color'] ?? 'Not specified'); ?></p>
+                        <p><strong>Registered:</strong> <?php echo isset($pet['created_at']) ? date('M j, Y', strtotime($pet['created_at'])) : 'N/A'; ?></p>
                     </div>
                 </div>
                 <?php endforeach; ?>

@@ -30,14 +30,30 @@ if ($_POST) {
                 $error_message = "All fields are required.";
             } else {
                 try {
-                    $stmt = $pdo->prepare("
-                        INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, reason, status) 
-                        VALUES (?, ?, ?, ?, ?, 'Scheduled')
-                    ");
-                    $stmt->execute([$patient_id, $doctor_id, $appointment_date, $appointment_time, $reason]);
+                    // Check if appointments table has the correct column names
+                    $result = $pdo->query("DESCRIBE appointments");
+                    $appointment_columns = $result->fetchAll(PDO::FETCH_COLUMN);
+                    
+                    $date_column = in_array('appointment_date', $appointment_columns) ? 'appointment_date' : 'date';
+                    $time_column = in_array('appointment_time', $appointment_columns) ? 'appointment_time' : 'time';
+                    $has_reason = in_array('reason', $appointment_columns);
+                    
+                    if ($has_reason) {
+                        $stmt = $pdo->prepare("
+                            INSERT INTO appointments (patient_id, doctor_id, $date_column, $time_column, reason, status) 
+                            VALUES (?, ?, ?, ?, ?, 'Scheduled')
+                        ");
+                        $stmt->execute([$patient_id, $doctor_id, $appointment_date, $appointment_time, $reason]);
+                    } else {
+                        $stmt = $pdo->prepare("
+                            INSERT INTO appointments (patient_id, doctor_id, $date_column, $time_column, status) 
+                            VALUES (?, ?, ?, ?, 'Scheduled')
+                        ");
+                        $stmt->execute([$patient_id, $doctor_id, $appointment_date, $appointment_time]);
+                    }
                     $success_message = "Appointment booked successfully!";
                 } catch(PDOException $e) {
-                    $error_message = "Failed to book appointment.";
+                    $error_message = "Failed to book appointment: " . $e->getMessage();
                 }
             }
         } elseif ($_POST['action'] === 'cancel') {
@@ -68,27 +84,43 @@ try {
 
 // Get available doctors
 try {
+    // Check if doctors table has phone column or contact column
+    $result = $pdo->query("DESCRIBE doctors");
+    $doctor_columns = $result->fetchAll(PDO::FETCH_COLUMN);
+    $phone_column = in_array('phone', $doctor_columns) ? 'phone' : 'contact';
+    
     $stmt = $pdo->prepare("SELECT * FROM doctors WHERE availability = 'Available' ORDER BY name");
     $stmt->execute();
     $doctors = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch(PDOException $e) {
-    $error_message = "Failed to load doctors.";
+    $error_message = "Failed to load doctors: " . $e->getMessage();
 }
 
 // Get user's appointments
 try {
+    // Check if appointments table has the correct column names
+    $result = $pdo->query("DESCRIBE appointments");
+    $appointment_columns = $result->fetchAll(PDO::FETCH_COLUMN);
+    
+    $date_column = in_array('appointment_date', $appointment_columns) ? 'appointment_date' : 'date';
+    $time_column = in_array('appointment_time', $appointment_columns) ? 'appointment_time' : 'time';
+    $has_reason = in_array('reason', $appointment_columns);
+    
+    // Build the SELECT query with conditional reason column
+    $reason_field = $has_reason ? 'a.reason' : 'NULL as reason';
+    
     $stmt = $pdo->prepare("
-        SELECT a.*, p.animal_name, p.species, d.name as doctor_name, d.specialization
+        SELECT a.*, $reason_field, p.animal_name, p.species, d.name as doctor_name, d.specialization
         FROM appointments a
         JOIN patients p ON a.patient_id = p.patient_id
         JOIN doctors d ON a.doctor_id = d.doctor_id
         WHERE p.owner_id = ?
-        ORDER BY a.appointment_date DESC, a.appointment_time DESC
+        ORDER BY a.$date_column DESC, a.$time_column DESC
     ");
     $stmt->execute([$user_id]);
     $appointments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch(PDOException $e) {
-    $error_message = "Failed to load appointments.";
+    $error_message = "Failed to load appointments: " . $e->getMessage();
 }
 ?>
 

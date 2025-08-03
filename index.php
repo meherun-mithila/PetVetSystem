@@ -90,22 +90,29 @@ if ($_POST && !$error_message) {
     }
 }
 
-// Get some sample users for demo
+// Get one demo user from each section with passwords
 $demo_users = [];
 try {
     if (isset($pdo)) {
-        // Get admin
-        $stmt = $pdo->query("SELECT name, email FROM admin LIMIT 2");
-        $admins = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        if ($admins) $demo_users['admins'] = $admins;
+        // Get one admin (Mithila) with password
+        $stmt = $pdo->query("SELECT name, email, password FROM admin WHERE name LIKE '%Mithila%' OR name LIKE '%mithila%' LIMIT 1");
+        $admin = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($admin) {
+            $demo_users['admin'] = $admin;
+        } else {
+            // If Mithila doesn't exist, get the first admin
+            $stmt = $pdo->query("SELECT name, email, password FROM admin LIMIT 1");
+            $admin = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($admin) $demo_users['admin'] = $admin;
+        }
         
-        // Get one regular user
-        $stmt = $pdo->query("SELECT name, email FROM users LIMIT 10");
+        // Get one regular user with password
+        $stmt = $pdo->query("SELECT name, email, password FROM users LIMIT 1");
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($user) $demo_users['user'] = $user;
         
-        // Get one staff member
-        $stmt = $pdo->query("SELECT name, email FROM staff LIMIT 5");
+        // Get one staff member with password
+        $stmt = $pdo->query("SELECT name, email, password FROM staff LIMIT 1");
         $staff = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($staff) $demo_users['staff'] = $staff;
     }
@@ -229,21 +236,19 @@ try {
             <div class="mt-8 p-4 bg-gray-50 rounded-lg">
                 <p class="text-sm text-gray-600 text-center mb-3">Demo Credentials:</p>
 
-                <?php if (isset($demo_users['admins'])): ?>
-              <?php foreach($demo_users['admins'] as $index => $admin): ?>
-             <div class="mb-2 p-2 bg-blue-50 rounded text-xs">
-             <strong>Admin <?php echo ($index + 1); ?>:</strong><br>
-             Email: <?php echo htmlspecialchars($admin['email']); ?><br>
-              Password: <?php echo ($index == 0) ? 'adeeb123' : 'Mithila12'; ?>
-           </div>
-           <?php endforeach; ?>
-          <?php endif; ?>
+                <?php if (isset($demo_users['admin'])): ?>
+                <div class="mb-2 p-2 bg-blue-50 rounded text-xs">
+                    <strong>Admin:</strong><br>
+                    Email: <?php echo htmlspecialchars($demo_users['admin']['email']); ?><br>
+                    Password: <?php echo htmlspecialchars($demo_users['admin']['password']); ?>
+                </div>
+                <?php endif; ?>
 
                 <?php if (isset($demo_users['user'])): ?>
                 <div class="mb-2 p-2 bg-blue-50 rounded text-xs">
                     <strong>Pet Owner:</strong><br>
                     Email: <?php echo htmlspecialchars($demo_users['user']['email']); ?><br>
-                    Password: pass123
+                    Password: <?php echo htmlspecialchars($demo_users['user']['password']); ?>
                 </div>
                 <?php endif; ?>
                 
@@ -251,7 +256,7 @@ try {
                 <div class="mb-2 p-2 bg-blue-50 rounded text-xs">
                     <strong>Staff:</strong><br>
                     Email: <?php echo htmlspecialchars($demo_users['staff']['email']); ?><br>
-                    Password: staff123
+                    Password: <?php echo htmlspecialchars($demo_users['staff']['password']); ?>
                 </div>
                 <?php endif; ?>
             </div>
@@ -297,22 +302,22 @@ try {
             
             <?php if (!empty($demo_users)): ?>
             const demoCredentials = {
-               <?php if (isset($demo_users['admins']) && !empty($demo_users['admins'])): ?>
+                <?php if (isset($demo_users['admin'])): ?>
                 'admin': {
-                    email: '<?php echo htmlspecialchars($demo_users['admins'][0]['email']); ?>',
-                    password: 'adeeb123'
+                    email: '<?php echo htmlspecialchars($demo_users['admin']['email']); ?>',
+                    password: '<?php echo htmlspecialchars($demo_users['admin']['password']); ?>'
                 },
                 <?php endif; ?>
                 <?php if (isset($demo_users['user'])): ?>
                 'user': {
                     email: '<?php echo htmlspecialchars($demo_users['user']['email']); ?>',
-                    password: 'pass123'
+                    password: '<?php echo htmlspecialchars($demo_users['user']['password']); ?>'
                 },
                 <?php endif; ?>
                 <?php if (isset($demo_users['staff'])): ?>
                 'staff': {
                     email: '<?php echo htmlspecialchars($demo_users['staff']['email']); ?>',
-                    password: 'staff123'
+                    password: '<?php echo htmlspecialchars($demo_users['staff']['password']); ?>'
                 },
                 <?php endif; ?>
             };

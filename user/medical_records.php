@@ -147,11 +147,11 @@ try {
                         </div>
                         <div>
                             <strong class="text-gray-700">Medication:</strong><br>
-                            <span class="text-gray-600"><?php echo htmlspecialchars($record['medication'] ?: 'None prescribed'); ?></span>
+                            <span class="text-gray-600"><?php echo htmlspecialchars($record['medication'] ?? 'None prescribed'); ?></span>
                         </div>
                         <div>
                             <strong class="text-gray-700">Follow-up:</strong><br>
-                            <span class="text-gray-600"><?php echo htmlspecialchars($record['follow_up'] ?: 'No follow-up required'); ?></span>
+                            <span class="text-gray-600"><?php echo htmlspecialchars($record['follow_up'] ?? 'No follow-up required'); ?></span>
                         </div>
                     </div>
                     

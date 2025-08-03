@@ -9,6 +9,47 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true || $_SESSI
 $clinic_name = "Caring Paws Veterinary Clinic";
 require_once '../config.php';
 
+// Handle admin account management
+$admin_message = "";
+if ($_POST && isset($_POST['action'])) {
+    if ($_POST['action'] === 'add_admin') {
+        $name = trim($_POST['name'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        
+        if (empty($name) || empty($email) || empty($password)) {
+            $admin_message = "Please fill in all fields";
+        } else {
+            try {
+                // Check if email already exists
+                $stmt = $pdo->prepare("SELECT admin_id FROM admin WHERE email = ?");
+                $stmt->execute([$email]);
+                if ($stmt->fetch()) {
+                    $admin_message = "Email already exists";
+                } else {
+                    // Add new admin
+                    $stmt = $pdo->prepare("INSERT INTO admin (name, email, password) VALUES (?, ?, ?)");
+                    $stmt->execute([$name, $email, $password]);
+                    $admin_message = "Admin account created successfully";
+                }
+            } catch(PDOException $e) {
+                $admin_message = "Error creating admin account: " . $e->getMessage();
+            }
+        }
+    } elseif ($_POST['action'] === 'delete_admin') {
+        $admin_id = $_POST['admin_id'] ?? 0;
+        if ($admin_id > 0) {
+            try {
+                $stmt = $pdo->prepare("DELETE FROM admin WHERE admin_id = ?");
+                $stmt->execute([$admin_id]);
+                $admin_message = "Admin account deleted successfully";
+            } catch(PDOException $e) {
+                $admin_message = "Error deleting admin account: " . $e->getMessage();
+            }
+        }
+    }
+}
+
 // Initialize variables
 $total_patients = 0;
 $total_appointments = 0;
@@ -19,8 +60,13 @@ $today_appointments = [];
 $pending_appointments = [];
 $recent_patients = [];
 $error_message = "";
+$all_admins = [];
 
 try {
+    // Get all admin accounts
+    $stmt = $pdo->query("SELECT admin_id, name, email, password FROM admin ORDER BY admin_id");
+    $all_admins = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
     // Get total counts
     $total_patients = $pdo->query("SELECT COUNT(*) FROM patients")->fetchColumn();
     $total_appointments = $pdo->query("SELECT COUNT(*) FROM appointments")->fetchColumn();
@@ -152,6 +198,90 @@ try {
                 <?php echo htmlspecialchars($error_message); ?>
             </div>
         <?php endif; ?>
+
+        <?php if (!empty($admin_message)): ?>
+            <div class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-6">
+                <?php echo htmlspecialchars($admin_message); ?>
+            </div>
+        <?php endif; ?>
+
+        <!-- Admin Accounts Management Section -->
+        <div class="bg-white rounded-lg shadow-md mb-8">
+            <div class="p-6 border-b border-gray-200">
+                <h2 class="text-xl font-bold text-gray-800">Admin Accounts Management</h2>
+                <p class="text-gray-600 text-sm mt-1">Manage all administrator accounts and credentials</p>
+            </div>
+            <div class="p-6">
+                <!-- Add New Admin Form -->
+                <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Add New Admin Account</h3>
+                    <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <input type="hidden" name="action" value="add_admin">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                            <input type="text" name="name" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vet-blue focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                            <input type="email" name="email" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vet-blue focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <input type="password" name="password" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vet-blue focus:border-transparent">
+                        </div>
+                        <div class="flex items-end">
+                            <button type="submit" class="w-full bg-vet-blue hover:bg-vet-dark-blue text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+                                Add Admin
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Admin Accounts Table -->
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Password</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <?php if (!empty($all_admins)): ?>
+                                <?php foreach($all_admins as $admin): ?>
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($admin['admin_id']); ?></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($admin['name']); ?></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($admin['email']); ?></td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        <span class="font-mono bg-gray-100 px-2 py-1 rounded text-xs"><?php echo htmlspecialchars($admin['password']); ?></span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        <?php if ($admin['admin_id'] != $_SESSION['user_id']): ?>
+                                        <form method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this admin account?')">
+                                            <input type="hidden" name="action" value="delete_admin">
+                                            <input type="hidden" name="admin_id" value="<?php echo $admin['admin_id']; ?>">
+                                            <button type="submit" class="text-red-600 hover:text-red-900 font-medium">Delete</button>
+                                        </form>
+                                        <?php else: ?>
+                                        <span class="text-gray-400">Current User</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="5" class="px-6 py-4 text-center text-gray-500">No admin accounts found</td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
 
         <!-- Quick Stats -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">

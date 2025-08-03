@@ -19,9 +19,18 @@ try {
     
     $date_column = in_array('appointment_date', $appointment_columns) ? 'appointment_date' : 'date';
     $time_column = in_array('appointment_time', $appointment_columns) ? 'appointment_time' : 'time';
+    $has_reason = in_array('reason', $appointment_columns);
+    
+    // Build the SELECT query with conditional reason column
+    $reason_field = $has_reason ? 'a.reason' : 'NULL as reason';
+    
+    // Check if doctors table has phone column or contact column
+    $result = $pdo->query("DESCRIBE doctors");
+    $doctor_columns = $result->fetchAll(PDO::FETCH_COLUMN);
+    $phone_column = in_array('phone', $doctor_columns) ? 'phone' : 'contact';
     
     $stmt = $pdo->prepare("
-        SELECT a.*, p.animal_name, p.species, u.name as owner_name, u.phone, d.name as doctor_name, d.specialization
+        SELECT a.*, $reason_field, p.animal_name, p.species, u.name as owner_name, u.phone, d.name as doctor_name, d.specialization
         FROM appointments a
         JOIN patients p ON a.patient_id = p.patient_id
         JOIN users u ON p.owner_id = u.user_id
@@ -112,7 +121,7 @@ try {
                                 </span>
                             </td>
                             <td class="px-6 py-4 text-sm text-gray-500">
-                                <?php echo htmlspecialchars($appointment['reason'] ?: 'No reason provided'); ?>
+                                <?php echo htmlspecialchars($appointment['reason'] ?? 'No reason provided'); ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>
