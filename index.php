@@ -12,7 +12,15 @@ $clinic_name = "Caring Paws Veterinary Clinic";
 $error_message = "";
 $success_message = "";
 
+// Check for verification success message
+if (isset($_SESSION['verification_success'])) {
+    $success_message = $_SESSION['verification_success'];
+    unset($_SESSION['verification_success']);
+}
+
 require_once 'config.php';
+
+// Email verification is now handled post-login on the user profile
 
 // Handle login form submission
 if ($_POST && !$error_message) {
@@ -51,14 +59,28 @@ if ($_POST && !$error_message) {
                     $_SESSION['role'] = $user_data['role'];
                 }
             } else {
-                // Check users table
-                $stmt = $pdo->prepare("SELECT user_id as id, name, email, password, phone, address FROM users WHERE email = ?");
+                // Check users table (verification handled after login)
+                $stmt = $pdo->prepare("SELECT user_id as id, name, email, password, phone, address, is_verified FROM users WHERE email = ?");
                 $stmt->execute([$login_email]);
                 $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
                 
-                if ($user_data && $user_data['password'] === $login_password) {
-                    $user_found = true;
-                    $_SESSION['user_type'] = 'user';
+                if ($user_data) {
+                    // Check if password matches (handle both hashed and plain text)
+                    $password_matches = false;
+                    
+                    // First try password_verify for hashed passwords
+                    if (password_verify($login_password, $user_data['password'])) {
+                        $password_matches = true;
+                    }
+                    // Fallback to plain text comparison for old passwords
+                    elseif ($user_data['password'] === $login_password) {
+                        $password_matches = true;
+                    }
+                    
+                    if ($password_matches) {
+                        $user_found = true;
+                        $_SESSION['user_type'] = 'user';
+                    }
                 }
             }
             
@@ -71,7 +93,7 @@ if ($_POST && !$error_message) {
                 
                 // Redirect based on user type
                 if ($_SESSION['user_type'] === 'admin') {
-                                                    header("Location: admin/dashboard.php");
+                    header("Location: admin/dashboard.php");
                     exit();
                 } elseif ($_SESSION['user_type'] === 'staff') {
                     header("Location: staff_member/dashboard.php");
@@ -81,13 +103,244 @@ if ($_POST && !$error_message) {
                     exit();
                 }
             } else {
-                $error_message = "Invalid email or password";
+                if (empty($error_message)) {
+                    $error_message = "Invalid email or password";
+                }
             }
             
         } catch(PDOException $e) {
             $error_message = "Login failed. Please try again.";
         }
     }
+}
+
+// Pre-login verification links and resend flow removed per new design
+
+function createVerificationTable($pdo) {
+    try {
+        $sql = "CREATE TABLE IF NOT EXISTS email_verifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            verification_token VARCHAR(255) NOT NULL,
+            is_verified TINYINT(1) DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL 24 HOUR),
+            INDEX (verification_token),
+            INDEX (email),
+            INDEX (user_id)
+        )";
+        $pdo->exec($sql);
+        
+        // Add is_verified column to users table if it doesn't exist
+        try {
+            $pdo->exec("ALTER TABLE users ADD COLUMN is_verified TINYINT(1) DEFAULT 0");
+        } catch(PDOException $e) {
+            // Column might already exist, ignore error
+            if (strpos($e->getMessage(), 'Duplicate column name') === false) {
+                error_log("Error adding is_verified column: " . $e->getMessage());
+            }
+        }
+        
+    } catch(PDOException $e) {
+        error_log("Error creating verification table: " . $e->getMessage());
+    }
+}
+
+function handleEmailVerification($pdo, $token) {
+    global $error_message, $success_message;
+    
+    try {
+        // Validate token format
+        if (empty($token) || strlen($token) !== 64) {
+            $error_message = "Invalid verification link format.";
+            return;
+        }
+        
+        // Find verification record
+        $stmt = $pdo->prepare("
+            SELECT v.*, u.name, u.email, u.user_id
+            FROM email_verifications v 
+            JOIN users u ON v.user_id = u.user_id 
+            WHERE v.verification_token = ? AND v.is_verified = 0
+        ");
+        $stmt->execute([$token]);
+        $verification = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$verification) {
+            $error_message = "Invalid or expired verification link.";
+            return;
+        }
+        
+        // Check if token has expired
+        $stmt = $pdo->prepare("SELECT * FROM email_verifications WHERE verification_token = ? AND expires_at > NOW()");
+        $stmt->execute([$token]);
+        if (!$stmt->fetch()) {
+            $error_message = "Verification link has expired. Please request a new one.";
+            return;
+        }
+        
+        // Start transaction for data consistency
+        $pdo->beginTransaction();
+        
+        try {
+            // Mark user as verified
+            $stmt = $pdo->prepare("UPDATE users SET is_verified = 1 WHERE user_id = ?");
+            $stmt->execute([$verification['user_id']]);
+            
+            // Mark verification as complete
+            $stmt = $pdo->prepare("UPDATE email_verifications SET is_verified = 1 WHERE verification_token = ?");
+            $stmt->execute([$token]);
+            
+            // Commit transaction
+            $pdo->commit();
+            
+            $success_message = "Email verified successfully! Welcome to Caring Paws Veterinary Clinic. You can now login with your email and password.";
+            
+        } catch(PDOException $e) {
+            // Rollback on error
+            $pdo->rollBack();
+            throw $e;
+        }
+        
+    } catch(PDOException $e) {
+        $error_message = "Verification failed. Please try again.";
+        error_log("Email verification error: " . $e->getMessage());
+    }
+}
+
+function handleResendVerification($pdo) {
+    global $error_message, $success_message;
+    
+    $email = trim($_POST['resend_email'] ?? '');
+    
+    if (empty($email)) {
+        $error_message = "Please enter your email address.";
+        return;
+    }
+    
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error_message = "Please enter a valid email address.";
+        return;
+    }
+    
+    try {
+        // Check if user exists
+        $stmt = $pdo->prepare("SELECT user_id, name FROM users WHERE email = ?");
+        $stmt->execute([$email]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$user) {
+            $error_message = "No account found with this email address.";
+            return;
+        }
+        
+        // Check if user is already verified
+        $stmt = $pdo->prepare("SELECT is_verified FROM users WHERE user_id = ?");
+        $stmt->execute([$user['user_id']]);
+        $user_status = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($user_status['is_verified'] == 1) {
+            $error_message = "This account is already verified. You can login directly.";
+            return;
+        }
+        
+        // Generate new verification token
+        $verification_token = bin2hex(random_bytes(32));
+        
+        // Check if verification record already exists
+        $stmt = $pdo->prepare("SELECT id FROM email_verifications WHERE user_id = ?");
+        $stmt->execute([$user['user_id']]);
+        $existing = $stmt->fetch();
+        
+        if ($existing) {
+            // Update existing record
+            $stmt = $pdo->prepare("
+                UPDATE email_verifications 
+                SET verification_token = ?, created_at = CURRENT_TIMESTAMP, expires_at = (CURRENT_TIMESTAMP + INTERVAL 24 HOUR)
+                WHERE user_id = ?
+            ");
+            $stmt->execute([$verification_token, $user['user_id']]);
+        } else {
+            // Insert new record
+            $stmt = $pdo->prepare("
+                INSERT INTO email_verifications (user_id, email, verification_token) 
+                VALUES (?, ?, ?)
+            ");
+            $stmt->execute([$user['user_id'], $email, $verification_token]);
+        }
+        
+        // Send verification email
+        if (sendVerificationEmail($email, $user['name'], $verification_token)) {
+            $success_message = "Verification email sent successfully! Please check your inbox and click the verification link.";
+        } else {
+            $error_message = "Failed to send verification email. Please try again or contact support.";
+        }
+        
+    } catch(PDOException $e) {
+        $error_message = "Failed to resend verification. Please try again.";
+        error_log("Resend verification error: " . $e->getMessage());
+    }
+}
+
+function sendVerificationEmail($email, $name, $token) {
+    // Configure email settings to fix the mail server error
+    ini_set('SMTP', 'localhost');
+    ini_set('smtp_port', '25');
+    ini_set('sendmail_from', 'noreply@caringpaws.com');
+    
+    $verification_link = "http://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . "/index.php?token=" . $token;
+    
+    $subject = "Verify Your Email - Caring Paws Veterinary Clinic";
+    
+    $message = "
+    <html>
+    <head>
+        <title>Email Verification</title>
+    </head>
+    <body>
+        <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+            <div style='background-color: #3B82F6; color: white; padding: 20px; text-align: center;'>
+                <h1>🐾 Caring Paws Veterinary Clinic</h1>
+            </div>
+            
+            <div style='padding: 30px; background-color: #f9f9f9;'>
+                <h2 style='color: #333;'>Hello $name!</h2>
+                
+                <p>Thank you for registering with Caring Paws Veterinary Clinic. To complete your registration, please verify your email address by clicking the button below:</p>
+                
+                <div style='text-align: center; margin: 30px 0;'>
+                    <a href='$verification_link' 
+                       style='background-color: #10B981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;'>
+                        Verify Email Address
+                    </a>
+                </div>
+                
+                <p>Or copy and paste this link into your browser:</p>
+                <p style='word-break: break-all; color: #666;'>$verification_link</p>
+                
+                <p><strong>Important:</strong> This verification link will expire in 24 hours.</p>
+                
+                <p>If you didn't create this account, please ignore this email.</p>
+                
+                <p>Best regards,<br>
+                The Caring Paws Team</p>
+            </div>
+            
+            <div style='background-color: #333; color: white; padding: 20px; text-align: center; font-size: 12px;'>
+                <p>&copy; " . date('Y') . " Caring Paws Veterinary Clinic. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    ";
+    
+    $headers = "MIME-Version: 1.0" . "\r\n";
+    $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
+    $headers .= "From: Caring Paws <noreply@caringpaws.com>" . "\r\n";
+    $headers .= "Reply-To: support@caringpaws.com" . "\r\n";
+    
+    return mail($email, $subject, $message, $headers);
 }
 
 // Get one demo user from each section with passwords
@@ -151,6 +404,11 @@ try {
                 <div class="text-4xl mb-4">🐾</div>
                 <h1 class="text-2xl font-bold text-vet-blue mb-2"><?php echo $clinic_name; ?></h1>
                 <p class="text-gray-600">Login Portal</p>
+                <div class="mt-4 space-y-2">
+                    <a href="auth_system/signup.php" class="text-sm text-vet-blue hover:text-vet-dark-blue transition-colors underline block">
+                        New user? Sign up here
+                    </a>
+                </div>
             </div>
 
             <!-- Error/Success Messages -->
@@ -231,6 +489,8 @@ try {
                 </button>
             </form>
 
+            <!-- Email verification moved to user profile after login -->
+
             <!-- Demo Credentials -->
             <?php if (!empty($demo_users)): ?>
             <div class="mt-8 p-4 bg-gray-50 rounded-lg">
@@ -279,8 +539,8 @@ try {
             <!-- Footer Links -->
             <div class="mt-6 text-center">
                 <p class="text-sm text-gray-600">
-                    Need help? 
-                    <a href="#" class="text-vet-blue hover:text-vet-dark-blue transition-colors">Contact Support</a>
+                    Need help?
+                    <button id="supportBtn" type="button" class="text-vet-blue hover:text-vet-dark-blue transition-colors underline">Contact Support</button>
                 </p>
             </div>
         </div>
@@ -296,31 +556,95 @@ try {
     <script>
         // Auto-fill email when user type changes
         document.addEventListener('DOMContentLoaded', function() {
+            // Support quick-view toast
+            const btn = document.getElementById('supportBtn');
+            if (btn) {
+                btn.addEventListener('click', async () => {
+                    try {
+                        const res = await fetch('staff_member/support_data.php', { headers: { 'Accept': 'application/json' } });
+                        const data = await res.json();
+                        const contacts = (data && data.success && Array.isArray(data.contacts)) ? data.contacts : [];
+                        showSupportToast(contacts);
+                    } catch (e) {
+                        showSupportToast([]);
+                    }
+                });
+            }
+
+            function showSupportToast(contacts) {
+                const container = document.createElement('div');
+                container.className = 'fixed inset-0 flex items-end md:items-center md:justify-center z-50';
+
+                const overlay = document.createElement('div');
+                overlay.className = 'absolute inset-0 bg-black/30';
+                overlay.addEventListener('click', () => container.remove());
+
+                const panel = document.createElement('div');
+                panel.className = 'relative m-4 md:m-0 max-w-md w-full bg-white rounded-xl shadow-2xl border border-gray-200 p-4 animate-[fadeIn_.2s_ease-out]';
+                panel.innerHTML = `
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">Contact Support</h3>
+                            <p class="text-sm text-gray-500">Front desk contact details</p>
+                        </div>
+                        <button class="text-gray-400 hover:text-gray-700" aria-label="Close">✕</button>
+                    </div>
+                    <div class="mt-3 space-y-3" id="supportList"></div>
+                    <div class="mt-4 text-right">
+                        <a href="staff_member/support.php" class="text-sm text-vet-blue hover:text-vet-dark-blue underline">Open full page</a>
+                    </div>
+                `;
+                panel.querySelector('button[aria-label="Close"]').addEventListener('click', () => container.remove());
+
+                const list = panel.querySelector('#supportList');
+                if (contacts.length === 0) {
+                    list.innerHTML = '<div class="text-sm text-gray-600">No support contacts available.</div>';
+                } else {
+                    contacts.forEach(c => {
+                        const item = document.createElement('div');
+                        item.className = 'border rounded-lg p-3';
+                        const email = (c.email || '').replace(/"/g, '');
+                        const name = c.name || 'Reception';
+                        const role = c.role || 'Receptionist';
+                        item.innerHTML = `
+                            <div class="font-medium text-gray-900">${name}</div>
+                            <div class="text-xs text-gray-500 mb-1">${role}</div>
+                            <div class="text-sm">
+                                <a class="text-vet-blue hover:text-vet-dark-blue underline" href="mailto:${email}">${email}</a>
+                            </div>
+                        `;
+                        list.appendChild(item);
+                    });
+                }
+
+                container.appendChild(overlay);
+                container.appendChild(panel);
+                document.body.appendChild(container);
+            }
             const userTypeSelect = document.querySelector('select[name="user_type"]');
             const emailInput = document.querySelector('input[name="email"]');
             const passwordInput = document.querySelector('input[name="password"]');
             
             <?php if (!empty($demo_users)): ?>
-            const demoCredentials = {
-                <?php if (isset($demo_users['admin'])): ?>
-                'admin': {
-                    email: '<?php echo htmlspecialchars($demo_users['admin']['email']); ?>',
-                    password: '<?php echo htmlspecialchars($demo_users['admin']['password']); ?>'
-                },
-                <?php endif; ?>
-                <?php if (isset($demo_users['user'])): ?>
-                'user': {
-                    email: '<?php echo htmlspecialchars($demo_users['user']['email']); ?>',
-                    password: '<?php echo htmlspecialchars($demo_users['user']['password']); ?>'
-                },
-                <?php endif; ?>
-                <?php if (isset($demo_users['staff'])): ?>
-                'staff': {
-                    email: '<?php echo htmlspecialchars($demo_users['staff']['email']); ?>',
-                    password: '<?php echo htmlspecialchars($demo_users['staff']['password']); ?>'
-                },
-                <?php endif; ?>
+            const demoCredentials = {};
+            <?php if (isset($demo_users['admin'])): ?>
+            demoCredentials['admin'] = {
+                email: '<?php echo htmlspecialchars($demo_users['admin']['email']); ?>',
+                password: '<?php echo htmlspecialchars($demo_users['admin']['password']); ?>'
             };
+            <?php endif; ?>
+            <?php if (isset($demo_users['user'])): ?>
+            demoCredentials['user'] = {
+                email: '<?php echo htmlspecialchars($demo_users['user']['email']); ?>',
+                password: '<?php echo htmlspecialchars($demo_users['user']['password']); ?>'
+            };
+            <?php endif; ?>
+            <?php if (isset($demo_users['staff'])): ?>
+            demoCredentials['staff'] = {
+                email: '<?php echo htmlspecialchars($demo_users['staff']['email']); ?>',
+                password: '<?php echo htmlspecialchars($demo_users['staff']['password']); ?>'
+            };
+            <?php endif; ?>
             
             userTypeSelect.addEventListener('change', function() {
                 const selectedType = this.value;
@@ -333,4 +657,4 @@ try {
         });
     </script>
 </body>
-</html>
+</html> 
