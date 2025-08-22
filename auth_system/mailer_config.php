@@ -23,8 +23,8 @@ if (!defined('SMTP_DEBUG')) { define('SMTP_DEBUG', 0); }
 // Allow self-signed certs (not recommended). Set true only for testing.
 if (!defined('SMTP_ALLOW_SELF_SIGNED')) { define('SMTP_ALLOW_SELF_SIGNED', false); }
 
-// Provider selection: 'smtp' (PHPMailer), 'brevo' (HTTP API), or 'mailsso' (validation + send via SMTP/mail)
-if (!defined('MAIL_PROVIDER')) { define('MAIL_PROVIDER', 'mailsso'); }
+// Provider selection: 'smtp' (PHPMailer), 'brevo' (HTTP API), 'custom' (your own HTTP API), or 'mailsso' (validation + send via SMTP/mail)
+if (!defined('MAIL_PROVIDER')) { define('MAIL_PROVIDER', 'custom'); }
 
 // Brevo (Sendinblue) API settings (used when MAIL_PROVIDER === 'brevo')
 if (!defined('BREVO_API_KEY')) { define('BREVO_API_KEY', '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'); }
@@ -35,6 +35,14 @@ if (!defined('BREVO_FROM_NAME')) { define('BREVO_FROM_NAME', 'PetVet'); }
 if (!defined('MAILS_SO_API_KEY')) { define('MAILS_SO_API_KEY', '30f20e52-1803-4dd8-a0a9-91c1176f5232'); }
 if (!defined('MAILS_SO_VALIDATE_ENABLED')) { define('MAILS_SO_VALIDATE_ENABLED', true); }
 
+
+// Custom mail API settings (used when MAIL_PROVIDER === 'custom')
+// Example expected behavior: HTTP 2xx means success; the API should accept JSON payload
+// containing at least: to, otp, subject/text/html (you can adjust your API to ignore unused fields)
+if (!defined('CUSTOM_MAIL_API_URL')) { define('CUSTOM_MAIL_API_URL', ''); } // optional local sender endpoint
+if (!defined('CUSTOM_MAIL_API_KEY')) { define('CUSTOM_MAIL_API_KEY', ''); }
+if (!defined('CUSTOM_MAIL_AUTH_HEADER')) { define('CUSTOM_MAIL_AUTH_HEADER', 'x-api-key'); } // or 'Authorization'
+if (!defined('CUSTOM_MAIL_TIMEOUT')) { define('CUSTOM_MAIL_TIMEOUT', 20); }
 
 
 

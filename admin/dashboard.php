@@ -9,124 +9,137 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true || $_SESSI
 $clinic_name = "Caring Paws Veterinary Clinic";
 require_once '../config.php';
 
-// Handle admin account management
-$admin_message = "";
-if ($_POST && isset($_POST['action'])) {
-    if ($_POST['action'] === 'add_admin') {
-        $name = trim($_POST['name'] ?? '');
-        $email = trim($_POST['email'] ?? '');
-        $password = $_POST['password'] ?? '';
-        
-        if (empty($name) || empty($email) || empty($password)) {
-            $admin_message = "Please fill in all fields";
-        } else {
-            try {
-                // Check if email already exists
-                $stmt = $pdo->prepare("SELECT admin_id FROM admin WHERE email = ?");
-                $stmt->execute([$email]);
-                if ($stmt->fetch()) {
-                    $admin_message = "Email already exists";
+$stats = [];
+$admins = [];
+$error_message = "";
+$success_message = "";
+
+// Get admin user information - use the correct session variable names
+$admin_name = $_SESSION['user_name'] ?? $_SESSION['name'] ?? $_SESSION['email'] ?? 'Admin User';
+$admin_email = $_SESSION['user_email'] ?? $_SESSION['email'] ?? 'N/A';
+$admin_id = $_SESSION['user_id'] ?? 'N/A';
+
+// Handle admin management form submissions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['action'])) {
+        switch ($_POST['action']) {
+            case 'add_admin':
+                try {
+                    $stmt = $pdo->prepare("SELECT COUNT(*) FROM admin WHERE email = ?");
+                    $stmt->execute([$_POST['email']]);
+                    if ($stmt->fetchColumn() > 0) {
+                        $error_message = "Email already exists!";
                 } else {
-                    // Add new admin
-                    $stmt = $pdo->prepare("INSERT INTO admin (name, email, password) VALUES (?, ?, ?)");
-                    $stmt->execute([$name, $email, $password]);
-                    $admin_message = "Admin account created successfully";
+                        $stmt = $pdo->prepare("
+                            INSERT INTO admin (name, email, password)
+                            VALUES (?, ?, ?)
+                        ");
+                        $stmt->execute([
+                            $_POST['name'],
+                            $_POST['email'],
+                            $_POST['password'] // Note: In production, this should be hashed
+                        ]);
+                        $success_message = "Admin added successfully!";
+                    }
+                } catch(PDOException $e) {
+                    $error_message = "Failed to add admin: " . $e->getMessage();
+                }
+                break;
+                
+            case 'edit_admin':
+                try {
+                    $stmt = $pdo->prepare("SELECT COUNT(*) FROM admin WHERE email = ? AND admin_id != ?");
+                    $stmt->execute([$_POST['email'], $_POST['admin_id']]);
+                    if ($stmt->fetchColumn() > 0) {
+                        $error_message = "Email already exists!";
+                    } else {
+                        if (!empty($_POST['password'])) {
+                            $stmt = $pdo->prepare("
+                                UPDATE admin 
+                                SET name = ?, email = ?, password = ?
+                                WHERE admin_id = ?
+                            ");
+                            $stmt->execute([
+                                $_POST['name'],
+                                $_POST['email'],
+                                $_POST['password'], // Note: In production, this should be hashed
+                                $_POST['admin_id']
+                            ]);
+                        } else {
+                            $stmt = $pdo->prepare("
+                                UPDATE admin 
+                                SET name = ?, email = ?
+                                WHERE admin_id = ?
+                            ");
+                            $stmt->execute([
+                                $_POST['name'],
+                                $_POST['email'],
+                                $_POST['admin_id']
+                            ]);
+                        }
+                        $success_message = "Admin updated successfully!";
                 }
             } catch(PDOException $e) {
-                $admin_message = "Error creating admin account: " . $e->getMessage();
-            }
-        }
-    } elseif ($_POST['action'] === 'delete_admin') {
-        $admin_id = $_POST['admin_id'] ?? 0;
-        if ($admin_id > 0) {
-            try {
+                    $error_message = "Failed to update admin: " . $e->getMessage();
+                }
+                break;
+                
+            case 'delete_admin':
+                try {
+                    if ($_POST['admin_id'] == $_SESSION['user_id']) {
+                        $error_message = "You cannot delete your own account!";
+                    } else {
                 $stmt = $pdo->prepare("DELETE FROM admin WHERE admin_id = ?");
-                $stmt->execute([$admin_id]);
-                $admin_message = "Admin account deleted successfully";
+                        $stmt->execute([$_POST['admin_id']]);
+                        $success_message = "Admin deleted successfully!";
+                    }
             } catch(PDOException $e) {
-                $admin_message = "Error deleting admin account: " . $e->getMessage();
-            }
+                    $error_message = "Failed to delete admin: " . $e->getMessage();
+                }
+                break;
         }
     }
 }
 
-// Initialize variables
-$total_patients = 0;
-$total_appointments = 0;
-$total_doctors = 0;
-$total_users = 0;
-$recent_appointments = [];
-$today_appointments = [];
-$pending_appointments = [];
-$recent_patients = [];
-$error_message = "";
-$all_admins = [];
-
 try {
-    // Get all admin accounts
-    $stmt = $pdo->query("SELECT admin_id, name, email, password FROM admin ORDER BY admin_id");
-    $all_admins = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Get total counts
-    $total_patients = $pdo->query("SELECT COUNT(*) FROM patients")->fetchColumn();
-    $total_appointments = $pdo->query("SELECT COUNT(*) FROM appointments")->fetchColumn();
-    $total_doctors = $pdo->query("SELECT COUNT(*) FROM doctors")->fetchColumn();
-    $total_users = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
-    
-    // Check if appointments table has the correct column names
-    $result = $pdo->query("DESCRIBE appointments");
-    $appointment_columns = $result->fetchAll(PDO::FETCH_COLUMN);
-    
-    $date_column = in_array('appointment_date', $appointment_columns) ? 'appointment_date' : 'date';
-    $time_column = in_array('appointment_time', $appointment_columns) ? 'appointment_time' : 'time';
-    
-    // Get today's appointments
-    $stmt = $pdo->prepare("
-        SELECT a.*, p.animal_name, p.species, u.name as owner_name, u.phone, d.name as doctor_name
-        FROM appointments a
-        JOIN patients p ON a.patient_id = p.patient_id
-        JOIN users u ON p.owner_id = u.user_id
-        JOIN doctors d ON a.doctor_id = d.doctor_id
-        WHERE DATE(a.$date_column) = CURDATE()
-        ORDER BY a.$time_column
-        LIMIT 5
-    ");
+    // Get statistics - work with existing database structure
+    $stmt = $pdo->prepare("SELECT COUNT(*) as total_users FROM users");
     $stmt->execute();
-    $today_appointments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stats['total_users'] = $stmt->fetchColumn();
     
-    // Get pending appointments
-    $stmt = $pdo->prepare("
-        SELECT a.*, p.animal_name, p.species, u.name as owner_name, u.phone, d.name as doctor_name
-        FROM appointments a
-        JOIN patients p ON a.patient_id = p.patient_id
-        JOIN users u ON p.owner_id = u.user_id
-        JOIN doctors d ON a.doctor_id = d.doctor_id
-        WHERE a.status = 'Scheduled' AND a.$date_column >= CURDATE()
-        ORDER BY a.$date_column, a.$time_column
-        LIMIT 5
-    ");
+    $stmt = $pdo->prepare("SELECT COUNT(*) as total_doctors FROM doctors");
     $stmt->execute();
-    $pending_appointments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stats['total_doctors'] = $stmt->fetchColumn();
     
-    // Check if patients table has created_at column
-    $result = $pdo->query("DESCRIBE patients");
-    $patient_columns = $result->fetchAll(PDO::FETCH_COLUMN);
-    
-    $order_by = in_array('created_at', $patient_columns) ? 'p.created_at DESC' : 'p.patient_id DESC';
-    
-    // Get recent patients
-    $stmt = $pdo->prepare("
-        SELECT p.*, u.name as owner_name, u.phone
-        FROM patients p
-        JOIN users u ON p.owner_id = u.user_id
-        ORDER BY $order_by
-        LIMIT 5
-    ");
+    $stmt = $pdo->prepare("SELECT COUNT(*) as total_patients FROM patients");
     $stmt->execute();
-    $recent_patients = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stats['total_patients'] = $stmt->fetchColumn();
+    
+    $stmt = $pdo->prepare("SELECT COUNT(*) as total_staff FROM staff");
+    $stmt->execute();
+    $stats['total_staff'] = $stmt->fetchColumn();
+    
+    $stmt = $pdo->prepare("SELECT COUNT(*) as total_appointments FROM appointments");
+    $stmt->execute();
+    $stats['total_appointments'] = $stmt->fetchColumn();
+    
+    // Check if appointments table has status column, if not use a default count
+    try {
+        $stmt = $pdo->prepare("SELECT COUNT(*) as pending_appointments FROM appointments WHERE status = 'pending'");
+        $stmt->execute();
+        $stats['pending_appointments'] = $stmt->fetchColumn();
+    } catch(PDOException $e) {
+        // If status column doesn't exist, set pending to 0
+        $stats['pending_appointments'] = 0;
+    }
+    
+    // Get all admin users
+    $stmt = $pdo->prepare("SELECT * FROM admin ORDER BY admin_id DESC");
+    $stmt->execute();
+    $admins = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
 } catch(PDOException $e) {
-    $error_message = "Database connection failed: " . $e->getMessage();
+    $error_message = "Failed to load dashboard data: " . $e->getMessage();
 }
 ?>
 
@@ -137,294 +150,373 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - <?php echo $clinic_name; ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'vet-blue': '#2c5aa0',
-                        'vet-dark-blue': '#1e3d72',
-                        'vet-coral': '#ff6b6b'
-                    }
-                }
-            }
-        }
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-gray-100">
-    <!-- Header -->
-    <header class="bg-gradient-to-r from-vet-blue to-vet-dark-blue text-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-6 py-4">
-            <div class="flex justify-between items-center">
-                <div class="flex items-center">
-                    <span class="text-2xl mr-3">🐾</span>
-                    <div>
-                        <h1 class="text-xl font-bold"><?php echo $clinic_name; ?></h1>
-                        <p class="text-blue-200 text-sm">Administration Dashboard</p>
-                    </div>
-                </div>
+    <header class="bg-blue-600 text-white p-4">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-bold"><?php echo $clinic_name; ?> - Admin Dashboard</h1>
                 <div class="flex items-center space-x-4">
-                    <div class="text-right">
-                        <p class="font-semibold"><?php echo htmlspecialchars($_SESSION['user_name'] ?? 'Admin'); ?></p>
-                        <p class="text-blue-200 text-sm">Administrator</p>
-                    </div>
-                    <a href="../index.php?logout=1" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition-colors">
-                        Logout
-                    </a>
-                </div>
+                <span class="text-sm">Welcome, <?php echo htmlspecialchars($admin_name); ?></span>
+                <a href="../logout.php" class="bg-red-600 px-4 py-2 rounded hover:bg-red-700">Logout</a>
             </div>
         </div>
     </header>
 
-    <!-- Navigation -->
-    <nav class="bg-white shadow-md">
-        <div class="max-w-7xl mx-auto px-6 py-3">
-            <div class="flex space-x-8">
-                <a href="dashboard.php" class="text-vet-blue font-semibold border-b-2 border-vet-blue pb-2">Dashboard</a>
-                <a href="patients.php" class="text-gray-600 hover:text-vet-blue transition-colors">Patients</a>
-                <a href="appointments.php" class="text-gray-600 hover:text-vet-blue transition-colors">Appointments</a>
-                <a href="doctors.php" class="text-gray-600 hover:text-vet-blue transition-colors">Doctors</a>
-                <a href="users.php" class="text-gray-600 hover:text-vet-blue transition-colors">Users</a>
-                <a href="staff.php" class="text-gray-600 hover:text-vet-blue transition-colors">Staff</a>
-                <a href="medical_records.php" class="text-gray-600 hover:text-vet-blue transition-colors">Medical Records</a>
-                <a href="reports.php" class="text-gray-600 hover:text-vet-blue transition-colors">Reports</a>
-            </div>
-        </div>
-    </nav>
-
-    <div class="max-w-7xl mx-auto px-6 py-8">
+    <div class="max-w-7xl mx-auto p-6">
+        <h2 class="text-3xl font-bold mb-6">Dashboard Overview</h2>
+        
         <?php if (!empty($error_message)): ?>
-            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
                 <?php echo htmlspecialchars($error_message); ?>
             </div>
         <?php endif; ?>
 
-        <?php if (!empty($admin_message)): ?>
-            <div class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-6">
-                <?php echo htmlspecialchars($admin_message); ?>
+        <?php if (!empty($success_message)): ?>
+            <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+                <?php echo htmlspecialchars($success_message); ?>
             </div>
         <?php endif; ?>
 
-        <!-- Admin Accounts Management Section -->
-        <div class="bg-white rounded-lg shadow-md mb-8">
-            <div class="p-6 border-b border-gray-200">
-                <h2 class="text-xl font-bold text-gray-800">Admin Accounts Management</h2>
-                <p class="text-gray-600 text-sm mt-1">Manage all administrator accounts and credentials</p>
-            </div>
-            <div class="p-6">
-                <!-- Add New Admin Form -->
-                <div class="mb-6 p-4 bg-gray-50 rounded-lg">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Add New Admin Account</h3>
-                    <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <input type="hidden" name="action" value="add_admin">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                            <input type="text" name="name" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vet-blue focus:border-transparent">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                            <input type="email" name="email" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vet-blue focus:border-transparent">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                            <input type="password" name="password" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vet-blue focus:border-transparent">
-                        </div>
-                        <div class="flex items-end">
-                            <button type="submit" class="w-full bg-vet-blue hover:bg-vet-dark-blue text-white font-semibold py-2 px-4 rounded-lg transition-colors">
-                                Add Admin
-                            </button>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- Admin Accounts Table -->
-                <div class="overflow-x-auto">
-                    <table class="min-w-full bg-white border border-gray-200 rounded-lg">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Password</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            <?php if (!empty($all_admins)): ?>
-                                <?php foreach($all_admins as $admin): ?>
-                                <tr class="hover:bg-gray-50">
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($admin['admin_id']); ?></td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($admin['name']); ?></td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($admin['email']); ?></td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        <span class="font-mono bg-gray-100 px-2 py-1 rounded text-xs"><?php echo htmlspecialchars($admin['password']); ?></span>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <?php if ($admin['admin_id'] != $_SESSION['user_id']): ?>
-                                        <form method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this admin account?')">
-                                            <input type="hidden" name="action" value="delete_admin">
-                                            <input type="hidden" name="admin_id" value="<?php echo $admin['admin_id']; ?>">
-                                            <button type="submit" class="text-red-600 hover:text-red-900 font-medium">Delete</button>
-                                        </form>
-                                        <?php else: ?>
-                                        <span class="text-gray-400">Current User</span>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <tr>
-                                    <td colspan="5" class="px-6 py-4 text-center text-gray-500">No admin accounts found</td>
-                                </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Quick Stats -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div class="bg-white rounded-lg shadow-md p-6">
+        <!-- Statistics Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow p-6">
                 <div class="flex items-center">
-                    <div class="text-3xl text-blue-500 mr-4">🐕</div>
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-700">Total Patients</h3>
-                        <p class="text-3xl font-bold text-vet-blue"><?php echo $total_patients; ?></p>
+                    <div class="p-3 rounded-full bg-blue-100 text-blue-600">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total Users</p>
+                        <p class="text-2xl font-semibold text-gray-900"><?php echo $stats['total_users'] ?? 0; ?></p>
                     </div>
                 </div>
             </div>
             
-            <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="bg-white rounded-lg shadow p-6">
                 <div class="flex items-center">
-                    <div class="text-3xl text-green-500 mr-4">📅</div>
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-700">Total Appointments</h3>
-                        <p class="text-3xl font-bold text-vet-blue"><?php echo $total_appointments; ?></p>
+                    <div class="p-3 rounded-full bg-green-100 text-green-600">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total Doctors</p>
+                        <p class="text-2xl font-semibold text-gray-900"><?php echo $stats['total_doctors'] ?? 0; ?></p>
                     </div>
                 </div>
             </div>
             
-            <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="bg-white rounded-lg shadow p-6">
                 <div class="flex items-center">
-                    <div class="text-3xl text-purple-500 mr-4">👨‍⚕️</div>
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-700">Doctors</h3>
-                        <p class="text-3xl font-bold text-vet-blue"><?php echo $total_doctors; ?></p>
+                    <div class="p-3 rounded-full bg-purple-100 text-purple-600">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total Patients</p>
+                        <p class="text-2xl font-semibold text-gray-900"><?php echo $stats['total_patients'] ?? 0; ?></p>
                     </div>
                 </div>
             </div>
             
-            <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="bg-white rounded-lg shadow p-6">
                 <div class="flex items-center">
-                    <div class="text-3xl text-yellow-500 mr-4">👥</div>
-                    <div>
-                        <h3 class="text-lg font-semibold text-gray-700">Pet Owners</h3>
-                        <p class="text-3xl font-bold text-vet-blue"><?php echo $total_users; ?></p>
+                    <div class="p-3 rounded-full bg-yellow-100 text-yellow-600">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                        </svg>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Today's Appointments -->
-            <div class="bg-white rounded-lg shadow-md">
-                <div class="p-6 border-b border-gray-200 flex justify-between items-center">
-                    <h2 class="text-xl font-bold text-gray-800">Today's Appointments</h2>
-                    <a href="appointments.php" class="text-vet-blue hover:text-vet-dark-blue text-sm">View All</a>
-                </div>
-                <div class="p-6">
-                    <?php if (!empty($today_appointments)): ?>
-                        <div class="space-y-4">
-                            <?php foreach($today_appointments as $appointment): ?>
-                            <div class="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <h4 class="font-semibold text-lg text-gray-800"><?php echo htmlspecialchars($appointment['animal_name'] ?? 'Unknown'); ?></h4>
-                                        <p class="text-sm text-gray-600">Owner: <?php echo htmlspecialchars($appointment['owner_name'] ?? 'Unknown'); ?></p>
-                                        <p class="text-sm text-gray-500">Dr. <?php echo htmlspecialchars($appointment['doctor_name'] ?? 'Unknown'); ?></p>
-                                    </div>
-                                    <div class="text-right">
-                                        <p class="font-semibold text-vet-coral"><?php 
-                                            $time_field = $time_column === 'appointment_time' ? 'appointment_time' : 'time';
-                                            echo isset($appointment[$time_field]) ? date('g:i A', strtotime($appointment[$time_field])) : 'N/A'; 
-                                        ?></p>
-                                        <span class="px-2 py-1 rounded-full text-xs font-medium 
-                                            <?php echo ($appointment['status'] ?? '') === 'Scheduled' ? 'bg-blue-100 text-blue-800' : 
-                                                    (($appointment['status'] ?? '') === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'); ?>">
-                                            <?php echo htmlspecialchars($appointment['status'] ?? 'Unknown'); ?>
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <p class="text-gray-500 text-center py-8">No appointments scheduled for today.</p>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <!-- Recent Patients -->
-            <div class="bg-white rounded-lg shadow-md">
-                <div class="p-6 border-b border-gray-200 flex justify-between items-center">
-                    <h2 class="text-xl font-bold text-gray-800">Recent Patients</h2>
-                    <a href="patients.php" class="text-vet-blue hover:text-vet-dark-blue text-sm">View All</a>
-                </div>
-                <div class="p-6">
-                    <?php if (!empty($recent_patients)): ?>
-                        <div class="space-y-4">
-                            <?php foreach($recent_patients as $patient): ?>
-                            <div class="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <h4 class="font-semibold text-lg text-gray-800"><?php echo htmlspecialchars($patient['animal_name'] ?? 'Unknown'); ?></h4>
-                                        <p class="text-sm text-gray-600">Owner: <?php echo htmlspecialchars($patient['owner_name'] ?? 'Unknown'); ?></p>
-                                        <p class="text-sm text-gray-500"><?php echo htmlspecialchars($patient['species'] ?? 'Unknown'); ?> • <?php echo htmlspecialchars($patient['breed'] ?? 'Unknown'); ?></p>
-                                    </div>
-                                    <div class="text-right">
-                                        <p class="text-xs text-gray-500"><?php echo isset($patient['created_at']) ? date('M j, Y', strtotime($patient['created_at'])) : 'N/A'; ?></p>
-                                        <span class="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                            Active
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <p class="text-gray-500 text-center py-8">No patients registered yet.</p>
-                    <?php endif; ?>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">Total Staff</p>
+                        <p class="text-2xl font-semibold text-gray-900"><?php echo $stats['total_staff'] ?? 0; ?></p>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Quick Actions -->
-        <div class="mt-8 bg-white rounded-lg shadow-md">
-            <div class="p-6 border-b border-gray-200">
-                <h2 class="text-xl font-bold text-gray-800">Quick Actions</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+                <div class="space-y-3">
+                    <a href="users.php" class="block w-full bg-blue-600 text-white text-center px-4 py-2 rounded hover:bg-blue-700">
+                        Manage Users
+                    </a>
+                    <a href="doctors.php" class="block w-full bg-green-600 text-white text-center px-4 py-2 rounded hover:bg-green-700">
+                        Manage Doctors
+                    </a>
+                    <a href="patients.php" class="block w-full bg-purple-600 text-white text-center px-4 py-2 rounded hover:bg-purple-700">
+                        Manage Patients
+                    </a>
+                    <a href="staff.php" class="block w-full bg-yellow-600 text-white text-center hover:bg-yellow-700">
+                        Manage Staff
+                    </a>
+                </div>
+                                    </div>
+            
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Appointments</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Total Appointments:</span>
+                        <span class="font-semibold"><?php echo $stats['total_appointments'] ?? 0; ?></span>
+                                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Pending:</span>
+                        <span class="font-semibold text-yellow-600"><?php echo $stats['pending_appointments'] ?? 0; ?></span>
+                                </div>
+                    <a href="appointments.php" class="block w-full bg-indigo-600 text-white text-center px-4 py-2 rounded hover:bg-indigo-700">
+                        View All Appointments
+                    </a>
+                </div>
             </div>
-            <div class="p-6">
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <a href="patients.php?action=add" class="bg-vet-blue hover:bg-vet-dark-blue text-white p-4 rounded-lg text-center transition-colors">
-                        <div class="text-2xl mb-2">🐕</div>
-                        <div class="font-semibold">Add Patient</div>
+
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">System</h3>
+                <div class="space-y-3">
+                    <a href="reports.php" class="block w-full bg-gray-600 text-white text-center px-4 py-2 rounded hover:bg-gray-700">
+                        Generate Reports
                     </a>
-                    <a href="appointments.php?action=add" class="bg-green-600 hover:bg-green-700 text-white p-4 rounded-lg text-center transition-colors">
-                        <div class="text-2xl mb-2">📅</div>
-                        <div class="font-semibold">Schedule Appointment</div>
+                    <a href="medical_records.php" class="block w-full bg-red-600 text-white text-center px-4 py-2 rounded hover:bg-red-700">
+                        Medical Records
                     </a>
-                    <a href="doctors.php?action=add" class="bg-purple-600 hover:bg-purple-700 text-white p-4 rounded-lg text-center transition-colors">
-                        <div class="text-2xl mb-2">👨‍⚕️</div>
-                        <div class="font-semibold">Add Doctor</div>
-                    </a>
-                    <a href="reports.php" class="bg-yellow-600 hover:bg-yellow-700 text-white p-4 rounded-lg text-center transition-colors">
-                        <div class="text-2xl mb-2">📊</div>
-                        <div class="font-semibold">View Reports</div>
-                    </a>
+                    <button onclick="showSystemInfo()" class="block w-full bg-teal-600 text-white text-center px-4 py-2 rounded hover:bg-teal-700">
+                        System Info
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Management Section -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-gray-900">Admin Management</h3>
+                <button onclick="showAddAdminForm()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                    Add New Admin
+                </button>
+            </div>
+            
+            <!-- Add Admin Form -->
+            <div id="addAdminForm" class="hidden px-6 py-4 border-b border-gray-200">
+                <h4 class="text-md font-semibold text-gray-900 mb-4">Add New Admin</h4>
+                <form method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <input type="hidden" name="action" value="add_admin">
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                        <input type="text" name="name" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" name="email" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input type="password" name="password" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    
+                    <div class="md:col-span-3 flex gap-2">
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                            Add Admin
+                        </button>
+                        <button type="button" onclick="hideAddAdminForm()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Edit Admin Form -->
+            <div id="editAdminForm" class="hidden px-6 py-4 border-b border-gray-200">
+                <h4 class="text-md font-semibold text-gray-900 mb-4">Edit Admin</h4>
+                <form method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <input type="hidden" name="action" value="edit_admin">
+                    <input type="hidden" name="admin_id" id="edit_admin_id">
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                        <input type="text" name="name" id="edit_admin_name" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    
+                                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" name="email" id="edit_admin_email" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">New Password (leave blank to keep current)</label>
+                        <input type="password" name="password" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                    
+                    <div class="md:col-span-3 flex gap-2">
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                            Update Admin
+                        </button>
+                        <button type="button" onclick="hideEditAdminForm()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                            Cancel
+                        </button>
+                                </div>
+                </form>
+                            </div>
+
+            <!-- Admin List -->
+            <div class="overflow-x-auto">
+                <?php if (!empty($admins)): ?>
+                    <table class="min-w-full">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <?php foreach($admins as $admin_user): ?>
+                            <tr class="hover:bg-gray-50 <?php echo $admin_user['admin_id'] == $_SESSION['user_id'] ? 'bg-blue-50' : ''; ?>">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    <?php echo htmlspecialchars($admin_user['admin_id']); ?>
+                                    <?php if ($admin_user['admin_id'] == $_SESSION['user_id']): ?>
+                                        <span class="ml-2 text-xs text-blue-600">(You)</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    <?php echo htmlspecialchars($admin_user['name']); ?>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <?php echo htmlspecialchars($admin_user['email']); ?>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                    <button onclick="editAdmin(<?php echo htmlspecialchars(json_encode($admin_user)); ?>)" 
+                                            class="text-blue-600 hover:text-blue-900 mr-3">Edit</button>
+                                    <?php if ($admin_user['admin_id'] != $_SESSION['user_id']): ?>
+                                        <button onclick="deleteAdmin(<?php echo $admin_user['admin_id']; ?>)" 
+                                                class="text-red-600 hover:text-red-900">Delete</button>
+                                    <?php else: ?>
+                                        <span class="text-gray-400">Delete</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php else: ?>
+                    <div class="text-center py-12">
+                        <p class="text-gray-500">No admin users found.</p>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Confirm Delete</h3>
+                <p class="text-sm text-gray-500 mb-4">Are you sure you want to delete this admin? This action cannot be undone.</p>
+                <div class="flex justify-center space-x-4">
+                    <form method="POST" id="deleteForm">
+                        <input type="hidden" name="action" value="delete_admin">
+                        <input type="hidden" name="admin_id" id="delete_admin_id">
+                        <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
+                            Delete
+                        </button>
+                    </form>
+                    <button onclick="hideDeleteModal()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                        Cancel
+                    </button>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- System Info Modal -->
+    <div id="systemInfoModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">System Information</h3>
+                <div class="text-left text-sm text-gray-600 space-y-2">
+                    <p><strong>PHP Version:</strong> <?php echo phpversion(); ?></p>
+                    <p><strong>Server:</strong> <?php echo $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown'; ?></p>
+                    <p><strong>Database:</strong> MySQL/PDO</p>
+                    <p><strong>Session:</strong> Active</p>
+                    <p><strong>Admin User:</strong> <?php echo htmlspecialchars($admin_name); ?></p>
+                    <p><strong>Admin Email:</strong> <?php echo htmlspecialchars($admin_email); ?></p>
+                    <p><strong>Admin ID:</strong> <?php echo htmlspecialchars($admin_id); ?></p>
+                    <p><strong>Session ID:</strong> <?php echo htmlspecialchars(session_id()); ?></p>
+                    <p><strong>Login Time:</strong> <?php echo isset($_SESSION['login_time']) ? date('M j, Y g:i A', $_SESSION['login_time']) : 'N/A'; ?></p>
+                    <p><strong>Session Variables:</strong></p>
+                    <div class="bg-gray-100 p-2 rounded text-xs">
+                        <?php 
+                        echo "logged_in: " . ($_SESSION['logged_in'] ?? 'Not set') . "<br>";
+                        echo "user_type: " . ($_SESSION['user_type'] ?? 'Not set') . "<br>";
+                        echo "user_id: " . ($_SESSION['user_id'] ?? 'Not set') . "<br>";
+                        echo "user_name: " . ($_SESSION['user_name'] ?? 'Not set') . "<br>";
+                        echo "user_email: " . ($_SESSION['user_email'] ?? 'Not set') . "<br>";
+                        echo "name: " . ($_SESSION['name'] ?? 'Not set') . "<br>";
+                        echo "email: " . ($_SESSION['email'] ?? 'Not set');
+                        ?>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <button onclick="hideSystemInfo()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showAddAdminForm() {
+            document.getElementById('addAdminForm').classList.remove('hidden');
+            document.getElementById('editAdminForm').classList.add('hidden');
+        }
+        
+        function hideAddAdminForm() {
+            document.getElementById('addAdminForm').classList.add('hidden');
+        }
+        
+        function editAdmin(admin) {
+            document.getElementById('edit_admin_id').value = admin.admin_id;
+            document.getElementById('edit_admin_name').value = admin.name;
+            document.getElementById('edit_admin_email').value = admin.email;
+            
+            document.getElementById('addAdminForm').classList.add('hidden');
+            document.getElementById('editAdminForm').classList.remove('hidden');
+        }
+        
+        function hideEditAdminForm() {
+            document.getElementById('editAdminForm').classList.add('hidden');
+        }
+        
+        function deleteAdmin(adminId) {
+            document.getElementById('delete_admin_id').value = adminId;
+            document.getElementById('deleteModal').classList.remove('hidden');
+        }
+        
+        function hideDeleteModal() {
+            document.getElementById('deleteModal').classList.add('hidden');
+        }
+        
+        function showSystemInfo() {
+            document.getElementById('systemInfoModal').classList.remove('hidden');
+        }
+        
+        function hideSystemInfo() {
+            document.getElementById('systemInfoModal').classList.add('hidden');
+        }
+        
+        // Auto-refresh dashboard every 30 seconds
+        setTimeout(function() {
+            location.reload();
+        }, 30000);
+    </script>
 </body>
 </html> 

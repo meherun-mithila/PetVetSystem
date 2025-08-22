@@ -76,6 +76,74 @@ function sendOtpEmail($toEmail, $otpCode) {
 		// ignore validation failure and continue
 	}
 
+	// Send via Custom HTTP API if configured
+	try {
+		if (file_exists(__DIR__ . '/mailer_config.php')) {
+			require_once __DIR__ . '/mailer_config.php';
+			if (defined('MAIL_PROVIDER') && MAIL_PROVIDER === 'custom' && defined('CUSTOM_MAIL_API_URL') && CUSTOM_MAIL_API_URL !== '') {
+				$payload = [
+					'to' => $toEmail,
+					'otp' => $otpCode,
+					'subject' => $subject,
+					'text' => $textMessage,
+					'html' => $htmlMessage,
+				];
+				if (function_exists('curl_init')) {
+					$ch = curl_init(CUSTOM_MAIL_API_URL);
+					$headers = [ 'accept: application/json', 'content-type: application/json' ];
+					if (defined('CUSTOM_MAIL_API_KEY') && CUSTOM_MAIL_API_KEY !== '') {
+						$authHeaderName = defined('CUSTOM_MAIL_AUTH_HEADER') ? CUSTOM_MAIL_AUTH_HEADER : 'x-api-key';
+						$headers[] = $authHeaderName . ': ' . CUSTOM_MAIL_API_KEY;
+					}
+					curl_setopt_array($ch, [
+						CURLOPT_RETURNTRANSFER => true,
+						CURLOPT_POST => true,
+						CURLOPT_HTTPHEADER => $headers,
+						CURLOPT_POSTFIELDS => json_encode($payload),
+						CURLOPT_TIMEOUT => (defined('CUSTOM_MAIL_TIMEOUT') ? (int)CUSTOM_MAIL_TIMEOUT : 20),
+					]);
+					$resp = curl_exec($ch);
+					$http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+					$err = curl_error($ch);
+					curl_close($ch);
+					if ($err) { error_log('Custom mail API cURL error: ' . $err); }
+					if ($http >= 200 && $http < 300) { return true; }
+					error_log('Custom mail API HTTP ' . $http . ' response: ' . $resp);
+					// Fall through to SMTP/mail
+				} else {
+					error_log('cURL extension not enabled for custom mail API');
+					// Fallback to file_get_contents HTTP request
+					$headers = [ 'accept: application/json', 'content-type: application/json' ];
+					if (defined('CUSTOM_MAIL_API_KEY') && CUSTOM_MAIL_API_KEY !== '') {
+						$authHeaderName = defined('CUSTOM_MAIL_AUTH_HEADER') ? CUSTOM_MAIL_AUTH_HEADER : 'x-api-key';
+						$headers[] = $authHeaderName . ': ' . CUSTOM_MAIL_API_KEY;
+					}
+					$opts = [
+						'http' => [
+							'method' => 'POST',
+							'header' => implode("\r\n", $headers),
+							'content' => json_encode($payload),
+							'timeout' => (defined('CUSTOM_MAIL_TIMEOUT') ? (int)CUSTOM_MAIL_TIMEOUT : 20),
+							'ignore_errors' => true,
+						],
+					];
+					$ctx = stream_context_create($opts);
+					$resp = @file_get_contents(CUSTOM_MAIL_API_URL, false, $ctx);
+					$http = 0;
+					if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
+						$http = (int)$m[1];
+					}
+					if ($http >= 200 && $http < 300) { return true; }
+					error_log('Custom mail API stream HTTP ' . $http . ' response: ' . $resp);
+					// Fall through to SMTP/mail
+				}
+			}
+		}
+	} catch (Throwable $e) {
+		error_log('Custom mail API send error: ' . $e->getMessage());
+		// Fall through to SMTP/mail
+	}
+
 	// Send via Brevo (Sendinblue) API if configured
 	try {
 		if (file_exists(__DIR__ . '/mailer_config.php')) {
@@ -107,13 +175,13 @@ function sendOtpEmail($toEmail, $otpCode) {
 					$http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 					$err = curl_error($ch);
 					curl_close($ch);
-					if ($err) { error_log('Brevo cURL error: ' . $err); return false; }
+					if ($err) { error_log('Brevo cURL error: ' . $err); }
 					if ($http >= 200 && $http < 300) { return true; }
 					error_log('Brevo HTTP ' . $http . ' response: ' . $resp);
-					return false;
+					// fall through to SMTP
 				} else {
 					error_log('cURL extension not enabled for Brevo API');
-					return false;
+					// fall through to SMTP
 				}
 			}
 		}
@@ -140,10 +208,10 @@ function sendOtpEmail($toEmail, $otpCode) {
 			require_once __DIR__ . '/mailer_config.php';
 			$smtpConfigured = defined('SMTP_ENABLED') && SMTP_ENABLED === true;
 		}
-		// If SMTP is configured but PHPMailer library is missing, fail early
+		// If SMTP is configured but PHPMailer library is missing, skip SMTP and fall back
 		if ($smtpConfigured && !$phpMailerPath) {
 			error_log('PHPMailer not found. Place PHPMailer in auth_system/PHPMailer or auth_system/PHPMailer-master, or install via Composer.');
-			return false;
+			// fall through to mail()
 		}
 		if ($smtpConfigured && $phpMailerPath) {
 			$base = dirname($phpMailerPath);
@@ -155,12 +223,16 @@ function sendOtpEmail($toEmail, $otpCode) {
 				$mail->isSMTP();
 				$mail->SMTPDebug = defined('SMTP_DEBUG') ? SMTP_DEBUG : 0;
 				$mail->Host = SMTP_HOST;
-				$mail->SMTPAuth = true;
-				$mail->Username = SMTP_USERNAME;
-				$mail->Password = SMTP_PASSWORD;
+				$cfgUsername = defined('SMTP_USERNAME') ? (string)SMTP_USERNAME : '';
+				$cfgPassword = defined('SMTP_PASSWORD') ? (string)SMTP_PASSWORD : '';
+				$mail->SMTPAuth = ($cfgUsername !== '' || $cfgPassword !== '');
+				if ($mail->SMTPAuth) {
+					$mail->Username = $cfgUsername;
+					$mail->Password = $cfgPassword;
+				}
 				if (defined('SMTP_SECURE') && SMTP_SECURE === 'ssl') {
 					$mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
-				} else {
+				} elseif (defined('SMTP_SECURE') && (SMTP_SECURE === 'tls' || SMTP_SECURE === 'starttls')) {
 					$mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
 				}
 				$mail->Port = SMTP_PORT;
@@ -188,7 +260,7 @@ function sendOtpEmail($toEmail, $otpCode) {
 			} catch (Throwable $e) {
 				error_log('SMTP send error: ' . $e->getMessage());
 				if (isset($mail)) { error_log('PHPMailer ErrorInfo: ' . $mail->ErrorInfo); }
-				return false;
+				// fall through to mail()
 			}
 		}
 	} catch (Throwable $e) {
