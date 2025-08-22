@@ -261,6 +261,12 @@ try {
         <?php if (!empty($appointments)): ?>
             <div class="space-y-4">
                 <?php foreach($appointments as $appointment): ?>
+                <?php 
+                    $dateField = isset($appointment['appointment_date']) ? 'appointment_date' : (isset($appointment['date']) ? 'date' : null);
+                    $timeField = isset($appointment['appointment_time']) ? 'appointment_time' : (isset($appointment['time']) ? 'time' : null);
+                    $dateDisplay = $dateField && !empty($appointment[$dateField]) ? date('M j, Y', strtotime($appointment[$dateField])) : 'N/A';
+                    $timeDisplay = $timeField && !empty($appointment[$timeField]) ? date('g:i A', strtotime($appointment[$timeField])) : 'N/A';
+                ?>
                 <div class="bg-white rounded-lg shadow-md p-6">
                     <div class="flex justify-between items-start">
                         <div class="flex-1">
@@ -284,8 +290,8 @@ try {
                                     <span class="text-gray-500"><?php echo htmlspecialchars($appointment['specialization']); ?></span>
                                 </div>
                                 <div>
-                                    <strong>Date:</strong> <?php echo date('M j, Y', strtotime($appointment['appointment_date'])); ?><br>
-                                    <strong>Time:</strong> <?php echo date('g:i A', strtotime($appointment['appointment_time'])); ?>
+                                    <strong>Date:</strong> <?php echo $dateDisplay; ?><br>
+                                    <strong>Time:</strong> <?php echo $timeDisplay; ?>
                                 </div>
                                 <div>
                                     <strong>Pet:</strong> <?php echo htmlspecialchars($appointment['animal_name']); ?><br>

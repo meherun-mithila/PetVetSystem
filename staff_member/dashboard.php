@@ -14,7 +14,6 @@ require_once '../config.php';
 $today_appointments = [];
 $pending_appointments = [];
 $recent_patients = [];
-$available_doctors = [];
 $error_message = "";
 $staff_info = [];
 
@@ -68,13 +67,6 @@ try {
         JOIN users u ON p.owner_id = u.user_id
         ORDER BY $order_by
         LIMIT 8
-    ")->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Get available doctors
-    $available_doctors = $pdo->query("
-        SELECT * FROM doctors 
-        WHERE availability = 'Available'
-        ORDER BY name
     ")->fetchAll(PDO::FETCH_ASSOC);
     
 } catch(PDOException $e) {
@@ -181,20 +173,6 @@ try {
 
             <div class="bg-white rounded-lg shadow p-6">
                 <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-green-100 text-green-600">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                        </svg>
-                    </div>
-                    <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-600">Available Doctors</p>
-                        <p class="text-2xl font-semibold text-gray-900"><?php echo count($available_doctors); ?></p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center">
                     <div class="p-3 rounded-full bg-purple-100 text-purple-600">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
@@ -295,45 +273,6 @@ try {
                         <p class="text-gray-500 text-center py-8">No recent patients found.</p>
                     <?php endif; ?>
                 </div>
-            </div>
-        </div>
-
-        <!-- Available Doctors -->
-        <div class="mt-8 bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-semibold text-gray-900">Available Doctors</h3>
-            </div>
-            <div class="p-6">
-                <?php if (!empty($available_doctors)): ?>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <?php foreach($available_doctors as $doctor): ?>
-                            <div class="p-4 border border-gray-200 rounded-lg">
-                                <div class="flex items-center space-x-3">
-                                    <div class="flex-shrink-0">
-                                        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                                            <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                                            </svg>
-                                        </div>
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <p class="font-medium text-gray-900">
-                                            <?php echo htmlspecialchars($doctor['name'] ?? 'Unknown'); ?>
-                                        </p>
-                                        <p class="text-sm text-gray-500">
-                                            <?php echo htmlspecialchars($doctor['specialization'] ?? 'General'); ?>
-                                        </p>
-                                    </div>
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        Available
-                                    </span>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else: ?>
-                    <p class="text-gray-500 text-center py-8">No doctors currently available.</p>
-                <?php endif; ?>
             </div>
         </div>
 

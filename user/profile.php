@@ -8,13 +8,16 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true || $_SESSI
 
 $clinic_name = "Caring Paws Veterinary Clinic";
 require_once '../config.php';
+require_once __DIR__ . '/../auth_system/bootstrap.php';
 
 $user_id = $_SESSION['user_id'];
 $user_data = [];
 $error_message = "";
 $success_message = "";
+$verify_message = '';
+$verify_error = '';
 
-// Handle form submissions
+// Handle form submissions (profile update and post-login email verification via OTP)
 if ($_POST) {
     if (isset($_POST['action']) && $_POST['action'] === 'update') {
         $name = trim($_POST['name']);
@@ -71,6 +74,140 @@ if ($_POST) {
                 }
             } catch(PDOException $e) {
                 $error_message = "Failed to update profile.";
+            }
+        }
+    } elseif (isset($_POST['action']) && $_POST['action'] === 'send_otp') {
+        // Send OTP to the current user's email
+        try {
+            $email = trim($_SESSION['user_email']);
+            $userId = (int)$_SESSION['user_id'];
+            if ($email) {
+                $otp = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+                $expiresAt = (new DateTime('+10 minutes'))->format('Y-m-d H:i:s');
+                $insOtp = $pdo->prepare('INSERT INTO email_otps (user_id, email, otp_code, expires_at, is_used, attempts) VALUES (?, ?, ?, ?, 0, 0)');
+                $insOtp->execute([$userId, $email, $otp, $expiresAt]);
+                $sent = sendOtpEmail($email, $otp);
+                if ($sent) {
+                    $verify_message = 'We sent a 6-digit code to your email.';
+                } else {
+                    $verify_error = 'Failed to send email. Please check your email address or try again later.';
+                }
+            } else {
+                $verify_error = 'No email associated with your account.';
+            }
+        } catch (Throwable $e) {
+            $verify_error = 'Failed to send code. Please try again.';
+        }
+    } elseif (isset($_POST['action']) && $_POST['action'] === 'verify_otp') {
+        $code = trim($_POST['otp'] ?? '');
+        $email = trim($_SESSION['user_email']);
+        if ($code === '') {
+            $verify_error = 'Enter the 6-digit code.';
+        } else {
+            try {
+                $stmt = $pdo->prepare('SELECT id, user_id, otp_code, is_used, attempts, expires_at FROM email_otps WHERE email = ? ORDER BY id DESC LIMIT 1');
+                $stmt->execute([$email]);
+                $otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$otpRow) {
+                    $verify_error = 'No OTP found. Please request a new code.';
+                } else {
+                    $now = new DateTime();
+                    $expiresAt = $otpRow['expires_at'] ? new DateTime($otpRow['expires_at']) : null;
+                    if ((int)$otpRow['is_used'] === 1) {
+                        $verify_error = 'This code was already used. Request a new one.';
+                    } elseif ($expiresAt && $now > $expiresAt) {
+                        $verify_error = 'Code expired. Request a new one.';
+                    } elseif ($otpRow['otp_code'] !== $code) {
+                        $upd = $pdo->prepare('UPDATE email_otps SET attempts = attempts + 1 WHERE id = ?');
+                        $upd->execute([$otpRow['id']]);
+                        $verify_error = 'Invalid code. Try again.';
+                    } else {
+                        $pdo->beginTransaction();
+                        try {
+                            $upd = $pdo->prepare('UPDATE email_otps SET is_used = 1 WHERE id = ?');
+                            $upd->execute([$otpRow['id']]);
+                            try {
+                                $u = $pdo->prepare('UPDATE users SET is_verified = 1 WHERE user_id = ?');
+                                $u->execute([(int)$otpRow['user_id']]);
+                            } catch (PDOException $e) { }
+                            $pdo->commit();
+                            $verify_message = 'Email verified successfully!';
+                        } catch (Throwable $e) {
+                            $pdo->rollBack();
+                            $verify_error = 'Failed to verify. Please try again.';
+                        }
+                    }
+                }
+            } catch (Throwable $e) {
+                $verify_error = 'Verification failed. Please try later.';
+            }
+        }
+    } elseif (isset($_POST['action']) && $_POST['action'] === 'delete_account') {
+        $confirm = isset($_POST['confirm_delete']) ? (bool)$_POST['confirm_delete'] : false;
+        $password = $_POST['delete_password'] ?? '';
+        if (!$confirm) {
+            $error_message = 'Please confirm you want to permanently delete your account.';
+        } elseif ($password === '') {
+            $error_message = 'Please enter your current password to delete your account.';
+        } else {
+            try {
+                // Fetch user for password validation
+                $stmt = $pdo->prepare('SELECT user_id, password, email FROM users WHERE user_id = ?');
+                $stmt->execute([$user_id]);
+                $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$user) {
+                    $error_message = 'User not found.';
+                } else {
+                    $valid = password_verify($password, $user['password']) || $password === $user['password'];
+                    if (!$valid) {
+                        $error_message = 'Incorrect password.';
+                    } else {
+                        // Check dependent records: patients owned and appointments through patients
+                        $petCountStmt = $pdo->prepare('SELECT COUNT(*) FROM patients WHERE owner_id = ?');
+                        try { $petCountStmt->execute([$user_id]); } catch (Throwable $e) { $petCountStmt = null; }
+                        $pet_count = $petCountStmt ? (int)$petCountStmt->fetchColumn() : 0;
+
+                        $apptCountStmt = $pdo->prepare('SELECT COUNT(*) FROM appointments a JOIN patients p ON a.patient_id = p.patient_id WHERE p.owner_id = ?');
+                        try { $apptCountStmt->execute([$user_id]); } catch (Throwable $e) { $apptCountStmt = null; }
+                        $appointment_count = $apptCountStmt ? (int)$apptCountStmt->fetchColumn() : 0;
+
+                        if ($pet_count > 0 || $appointment_count > 0) {
+                            $error_message = "Cannot delete account. You have $pet_count pet(s) and $appointment_count appointment(s) associated with this account.";
+                        } else {
+                            $pdo->beginTransaction();
+                            try {
+                                // Delete related OTPs
+                                $delOtps = $pdo->prepare('DELETE FROM email_otps WHERE user_id = ?');
+                                $delOtps->execute([$user_id]);
+
+                                // Delete any legacy verification records if table exists
+                                try {
+                                    $delVer = $pdo->prepare('DELETE FROM email_verifications WHERE user_id = ?');
+                                    $delVer->execute([$user_id]);
+                                } catch (Throwable $e) { /* table may not exist */ }
+
+                                // Finally delete the user
+                                $delUser = $pdo->prepare('DELETE FROM users WHERE user_id = ?');
+                                $delUser->execute([$user_id]);
+
+                                $pdo->commit();
+
+                                // Logout and redirect
+                                session_destroy();
+                                session_start();
+                                $_SESSION['verification_success'] = 'Account deleted successfully.';
+                                header('Location: ../index.php');
+                                exit;
+                            } catch (Throwable $e) {
+                                $pdo->rollBack();
+                                $error_message = 'Account deletion failed. Please try again later.';
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable $e) {
+                $error_message = 'An error occurred. Please try again later.';
             }
         }
     }
@@ -146,6 +283,37 @@ try {
     </nav>
 
     <div class="max-w-4xl mx-auto px-6 py-8">
+        <?php
+        // Fetch current verified status
+        try {
+            $vstmt = $pdo->prepare('SELECT is_verified, email FROM users WHERE user_id = ?');
+            $vstmt->execute([$user_id]);
+            $vdata = $vstmt->fetch(PDO::FETCH_ASSOC) ?: ['is_verified' => 0, 'email' => ''];
+        } catch (PDOException $e) { $vdata = ['is_verified' => 0, 'email' => '']; }
+        ?>
+
+        <?php if (!empty($verify_error)): ?>
+            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6"><?php echo htmlspecialchars($verify_error); ?></div>
+        <?php endif; ?>
+        <?php if (!empty($verify_message)): ?>
+            <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-6"><?php echo htmlspecialchars($verify_message); ?></div>
+        <?php endif; ?>
+
+        <?php if ((int)($vdata['is_verified'] ?? 0) !== 1): ?>
+        <div class="mb-8 bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+            <h2 class="text-lg font-semibold text-yellow-900 mb-2">Verify your email</h2>
+            <p class="text-sm text-yellow-800 mb-4">Your email (<?php echo htmlspecialchars($vdata['email']); ?>) is not verified. Verify to secure your account and enable all features.</p>
+            <form method="POST" class="flex flex-col sm:flex-row gap-3">
+                <input type="hidden" name="action" value="send_otp">
+                <button type="submit" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded">Send Code</button>
+            </form>
+            <form method="POST" class="mt-3 flex flex-col sm:flex-row gap-3">
+                <input type="hidden" name="action" value="verify_otp">
+                <input type="text" name="otp" maxlength="6" pattern="\d{6}" placeholder="Enter 6-digit code" class="px-3 py-2 border border-yellow-300 rounded w-full sm:w-64" required>
+                <button type="submit" class="bg-vet-blue hover:bg-vet-dark-blue text-white px-4 py-2 rounded">Verify</button>
+            </form>
+        </div>
+        <?php endif; ?>
         <!-- Messages -->
         <?php if (!empty($error_message)): ?>
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6">
@@ -239,6 +407,26 @@ try {
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Delete Account -->
+        <div class="mt-8 bg-white rounded-lg shadow-md p-6 border border-red-200">
+            <h2 class="text-xl font-bold text-red-700 mb-2">Delete Account</h2>
+            <p class="text-sm text-gray-600 mb-4">Deleting your account is permanent and cannot be undone.</p>
+            <form method="POST" class="space-y-4">
+                <input type="hidden" name="action" value="delete_account">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
+                    <input type="password" name="delete_password" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent" required>
+                </div>
+                <label class="flex items-center text-sm text-gray-700">
+                    <input type="checkbox" name="confirm_delete" value="1" class="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 mr-2" required>
+                    I understand this action cannot be undone and all my data will be permanently deleted.
+                </label>
+                <div>
+                    <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg">Delete My Account</button>
+                </div>
+            </form>
         </div>
     </div>
 </body>

@@ -9,6 +9,8 @@ if (isset($_GET['logout'])) {
 }
 
 $clinic_name = "Caring Paws Veterinary Clinic";
+// $company_phone removed per request
+$company_phone_bd = "+880 1712-345678"; // Company phone (Bangladesh)
 $error_message = "";
 $success_message = "";
 
@@ -373,7 +375,6 @@ try {
     // Ignore demo user fetch errors
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -404,6 +405,7 @@ try {
                 <div class="text-4xl mb-4">🐾</div>
                 <h1 class="text-2xl font-bold text-vet-blue mb-2"><?php echo $clinic_name; ?></h1>
                 <p class="text-gray-600">Login Portal</p>
+                <!-- Removed Front Desk phone display per request -->
                 <div class="mt-4 space-y-2">
                     <a href="auth_system/signup.php" class="text-sm text-vet-blue hover:text-vet-dark-blue transition-colors underline block">
                         New user? Sign up here
@@ -431,7 +433,7 @@ try {
             <?php endif; ?>
 
             <!-- Login Form -->
-            <form method="POST" class="space-y-6">
+            <form method="POST" class="space-y-6" autocomplete="on">
                 <!-- User Type Selection -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Login As</label>
@@ -454,6 +456,7 @@ try {
                         class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vet-blue focus:border-transparent outline-none transition-all"
                         placeholder="Enter your email"
                         required
+                        autocomplete="username"
                     >
                 </div>
 
@@ -468,12 +471,13 @@ try {
                         class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vet-blue focus:border-transparent outline-none transition-all"
                         placeholder="Enter your password"
                         required
+                        autocomplete="current-password"
                     >
                 </div>
 
                 <div class="flex items-center justify-between">
                     <label class="flex items-center">
-                        <input type="checkbox" class="w-4 h-4 text-vet-blue bg-gray-100 border-gray-300 rounded focus:ring-vet-blue">
+                        <input type="checkbox" name="remember" class="w-4 h-4 text-vet-blue bg-gray-100 border-gray-300 rounded focus:ring-vet-blue">
                         <span class="ml-2 text-sm text-gray-600">Remember me</span>
                     </label>
                     <a href="#" class="text-sm text-vet-blue hover:text-vet-dark-blue transition-colors">
@@ -554,9 +558,7 @@ try {
     </div>
 
     <script>
-        // Auto-fill email when user type changes
         document.addEventListener('DOMContentLoaded', function() {
-            // Support quick-view toast
             const btn = document.getElementById('supportBtn');
             if (btn) {
                 btn.addEventListener('click', async () => {
@@ -570,6 +572,51 @@ try {
                     }
                 });
             }
+
+            // Demo credential autofill (saved password-like behavior)
+            const userTypeSelect = document.querySelector('select[name="user_type"]');
+            const emailInput = document.querySelector('input[name="email"]');
+            const passwordInput = document.querySelector('input[name="password"]');
+
+            <?php if (!empty($demo_users)): ?>
+            const demoCredentials = {};
+            <?php if (isset($demo_users['admin'])): ?>
+            demoCredentials['admin'] = {
+                email: '<?php echo htmlspecialchars($demo_users['admin']['email'], ENT_QUOTES); ?>',
+                password: '<?php echo htmlspecialchars($demo_users['admin']['password'], ENT_QUOTES); ?>'
+            };
+            <?php endif; ?>
+            <?php if (isset($demo_users['user'])): ?>
+            demoCredentials['user'] = {
+                email: '<?php echo htmlspecialchars($demo_users['user']['email'], ENT_QUOTES); ?>',
+                password: '<?php echo htmlspecialchars($demo_users['user']['password'], ENT_QUOTES); ?>'
+            };
+            <?php endif; ?>
+            <?php if (isset($demo_users['staff'])): ?>
+            demoCredentials['staff'] = {
+                email: '<?php echo htmlspecialchars($demo_users['staff']['email'], ENT_QUOTES); ?>',
+                password: '<?php echo htmlspecialchars($demo_users['staff']['password'], ENT_QUOTES); ?>'
+            };
+            <?php endif; ?>
+
+            function applyDemoFor(type) {
+                if (demoCredentials[type]) {
+                    emailInput.value = demoCredentials[type].email;
+                    passwordInput.value = demoCredentials[type].password;
+                }
+            }
+
+            // Apply on load for the currently selected type
+            const initialType = userTypeSelect ? userTypeSelect.value : 'user';
+            applyDemoFor(initialType);
+
+            // Update when selection changes
+            if (userTypeSelect) {
+                userTypeSelect.addEventListener('change', function() {
+                    applyDemoFor(this.value);
+                });
+            }
+            <?php endif; ?>
 
             function showSupportToast(contacts) {
                 const container = document.createElement('div');
@@ -592,6 +639,7 @@ try {
                     <div class="mt-3 space-y-3" id="supportList"></div>
                     <div class="mt-4 text-right">
                         <a href="staff_member/support.php" class="text-sm text-vet-blue hover:text-vet-dark-blue underline">Open full page</a>
+                        <!-- Removed company phone lines from modal footer per request -->
                     </div>
                 `;
                 panel.querySelector('button[aria-label="Close"]').addEventListener('click', () => container.remove());
@@ -606,12 +654,14 @@ try {
                         const email = (c.email || '').replace(/"/g, '');
                         const name = c.name || 'Reception';
                         const role = c.role || 'Receptionist';
+                        const phone = c.phone || '';
                         item.innerHTML = `
                             <div class="font-medium text-gray-900">${name}</div>
                             <div class="text-xs text-gray-500 mb-1">${role}</div>
-                            <div class="text-sm">
+                            <div class="text-sm mb-1">
                                 <a class="text-vet-blue hover:text-vet-dark-blue underline" href="mailto:${email}">${email}</a>
                             </div>
+                            ${phone ? `<div class="text-sm text-gray-700">📞 ${phone}</div>` : ''}
                         `;
                         list.appendChild(item);
                     });
@@ -621,39 +671,6 @@ try {
                 container.appendChild(panel);
                 document.body.appendChild(container);
             }
-            const userTypeSelect = document.querySelector('select[name="user_type"]');
-            const emailInput = document.querySelector('input[name="email"]');
-            const passwordInput = document.querySelector('input[name="password"]');
-            
-            <?php if (!empty($demo_users)): ?>
-            const demoCredentials = {};
-            <?php if (isset($demo_users['admin'])): ?>
-            demoCredentials['admin'] = {
-                email: '<?php echo htmlspecialchars($demo_users['admin']['email']); ?>',
-                password: '<?php echo htmlspecialchars($demo_users['admin']['password']); ?>'
-            };
-            <?php endif; ?>
-            <?php if (isset($demo_users['user'])): ?>
-            demoCredentials['user'] = {
-                email: '<?php echo htmlspecialchars($demo_users['user']['email']); ?>',
-                password: '<?php echo htmlspecialchars($demo_users['user']['password']); ?>'
-            };
-            <?php endif; ?>
-            <?php if (isset($demo_users['staff'])): ?>
-            demoCredentials['staff'] = {
-                email: '<?php echo htmlspecialchars($demo_users['staff']['email']); ?>',
-                password: '<?php echo htmlspecialchars($demo_users['staff']['password']); ?>'
-            };
-            <?php endif; ?>
-            
-            userTypeSelect.addEventListener('change', function() {
-                const selectedType = this.value;
-                if (demoCredentials[selectedType]) {
-                    emailInput.value = demoCredentials[selectedType].email;
-                    passwordInput.value = demoCredentials[selectedType].password;
-                }
-            });
-            <?php endif; ?>
         });
     </script>
 </body>
