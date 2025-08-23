@@ -541,10 +541,13 @@ try {
             <?php endif; ?>
 
             <!-- Footer Links -->
-            <div class="mt-6 text-center">
+            <div class="mt-6 text-center space-y-2">
                 <p class="text-sm text-gray-600">
                     Need help?
                     <button id="supportBtn" type="button" class="text-vet-blue hover:text-vet-dark-blue transition-colors underline">Contact Support</button>
+                </p>
+                <p class="text-sm text-gray-600">
+                    <a href="articles/" class="text-vet-blue hover:text-vet-dark-blue transition-colors underline">📚 Read Veterinary Articles</a>
                 </p>
             </div>
         </div>
