@@ -149,6 +149,7 @@ try {
                 <a href="dashboard.php" class="text-gray-600 hover:text-vet-blue transition-colors">Dashboard</a>
                 <a href="pets.php" class="text-vet-blue font-semibold border-b-2 border-vet-blue pb-2">My Pets</a>
                 <a href="appointments.php" class="text-gray-600 hover:text-vet-blue transition-colors">Appointments</a>
+                <a href="adoption.php" class="text-gray-600 hover:text-vet-blue transition-colors">Adoption</a>
                 <a href="medical_records.php" class="text-gray-600 hover:text-vet-blue transition-colors">Medical Records</a>
                 <a href="profile.php" class="text-gray-600 hover:text-vet-blue transition-colors">Profile</a>
             </div>

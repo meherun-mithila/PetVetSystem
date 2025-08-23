@@ -6,6 +6,8 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true || $_SESSI
     exit();
 }
 
+require_once '../includes/status_helper.php';
+
 $clinic_name = "Caring Paws Veterinary Clinic";
 require_once '../config.php';
 
@@ -366,12 +368,7 @@ try {
                                     <?php echo htmlspecialchars($appointment['doctor_name'] ?? 'Unknown'); ?>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
-                                        <?php echo ($appointment['status'] ?? '') === 'Completed' ? 'bg-green-100 text-green-800' : 
-                                                   (($appointment['status'] ?? '') === 'Scheduled' ? 'bg-blue-100 text-blue-800' : 
-                                                   (($appointment['status'] ?? '') === 'Cancelled' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800')); ?>">
-                                        <?php echo htmlspecialchars($appointment['status'] ?? 'Unknown'); ?>
-                                    </span>
+                                    <?php echo displayStatusBadge($appointment['status'], 'appointment'); ?>
                                 </td>
                                 <?php if (in_array(strtolower($staff_role), $allowed_roles_for_changes, true)): ?>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">

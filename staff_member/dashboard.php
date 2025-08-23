@@ -6,6 +6,8 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true || $_SESSI
     exit();
 }
 
+require_once '../includes/status_helper.php';
+
 $clinic_name = "Caring Paws Veterinary Clinic";
 
 require_once '../config.php';
@@ -142,21 +144,7 @@ try {
         <?php endif; ?>
 
         <!-- Quick Stats -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-blue-100 text-blue-600">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                        </svg>
-                    </div>
-                    <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-600">Today's Appointments</p>
-                        <p class="text-2xl font-semibold text-gray-900"><?php echo count($today_appointments); ?></p>
-                    </div>
-                </div>
-            </div>
-
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div class="bg-white rounded-lg shadow p-6">
                 <div class="flex items-center">
                     <div class="p-3 rounded-full bg-yellow-100 text-yellow-600">
@@ -173,108 +161,20 @@ try {
 
             <div class="bg-white rounded-lg shadow p-6">
                 <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-purple-100 text-purple-600">
+                    <div class="p-3 rounded-full bg-blue-100 text-blue-600">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                         </svg>
                     </div>
                     <div class="ml-4">
-                        <p class="text-sm font-medium text-gray-600">Recent Patients</p>
-                        <p class="text-2xl font-semibold text-gray-900"><?php echo count($recent_patients); ?></p>
+                        <p class="text-sm font-medium text-gray-600">Today's Appointments</p>
+                        <p class="text-2xl font-semibold text-gray-900"><?php echo count($today_appointments); ?></p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Today's Appointments -->
-            <div class="bg-white rounded-lg shadow">
-                <div class="px-6 py-4 border-b border-gray-200">
-                    <h3 class="text-lg font-semibold text-gray-900">Today's Appointments</h3>
-                </div>
-                <div class="p-6">
-                    <?php if (!empty($today_appointments)): ?>
-                        <div class="space-y-4">
-                            <?php foreach($today_appointments as $appointment): ?>
-                                <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                    <div class="flex items-center space-x-4">
-                                        <div class="flex-shrink-0">
-                                            <div class="w-10 h-10 bg-vet-blue rounded-full flex items-center justify-center">
-                                                <span class="text-white font-semibold">
-                                                    <?php echo date('H:i', strtotime($appointment[$time_column] ?? '00:00')); ?>
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <p class="font-medium text-gray-900">
-                                                <?php echo htmlspecialchars($appointment['animal_name'] ?? 'Unknown'); ?>
-                                            </p>
-                                            <p class="text-sm text-gray-500">
-                                                <?php echo htmlspecialchars($appointment['owner_name'] ?? 'Unknown'); ?> • 
-                                                <?php echo htmlspecialchars($appointment['species'] ?? 'Unknown'); ?>
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div class="text-right">
-                                        <p class="text-sm font-medium text-gray-900">
-                                            <?php echo htmlspecialchars($appointment['doctor_name'] ?? 'Unknown'); ?>
-                                        </p>
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                            <?php echo htmlspecialchars($appointment['status'] ?? 'Unknown'); ?>
-                                        </span>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <p class="text-gray-500 text-center py-8">No appointments scheduled for today.</p>
-                    <?php endif; ?>
-                </div>
-            </div>
 
-            <!-- Recent Patients -->
-            <div class="bg-white rounded-lg shadow">
-                <div class="px-6 py-4 border-b border-gray-200">
-                    <h3 class="text-lg font-semibold text-gray-900">Recent Patients</h3>
-                </div>
-                <div class="p-6">
-                    <?php if (!empty($recent_patients)): ?>
-                        <div class="space-y-4">
-                            <?php foreach($recent_patients as $patient): ?>
-                                <div class="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-                                    <div class="flex-shrink-0">
-                                        <div class="w-10 h-10 bg-vet-coral rounded-full flex items-center justify-center">
-                                            <span class="text-white font-semibold">
-                                                <?php echo strtoupper(substr($patient['animal_name'] ?? 'P', 0, 1)); ?>
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <p class="font-medium text-gray-900 truncate">
-                                            <?php echo htmlspecialchars($patient['animal_name'] ?? 'Unknown'); ?>
-                                        </p>
-                                        <p class="text-sm text-gray-500">
-                                            <?php echo htmlspecialchars($patient['owner_name'] ?? 'Unknown'); ?> • 
-                                            <?php echo htmlspecialchars($patient['species'] ?? 'Unknown'); ?>
-                                        </p>
-                                    </div>
-                                    <div class="text-right">
-                                        <p class="text-sm text-gray-500">
-                                            <?php echo htmlspecialchars($patient['breed'] ?? 'Unknown'); ?>
-                                        </p>
-                                        <p class="text-xs text-gray-400">
-                                            <?php echo htmlspecialchars($patient['age'] ?? 'Unknown'); ?> years
-                                        </p>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <p class="text-gray-500 text-center py-8">No recent patients found.</p>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
 
         <!-- Quick Actions -->
         <div class="mt-8 bg-white rounded-lg shadow">
@@ -331,6 +231,22 @@ try {
                         </div>
                     </a>
 
+                    <a href="vaccine_records.php" class="block p-6 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors">
+                        <div class="flex items-center space-x-3">
+                            <div class="flex-shrink-0">
+                                <div class="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="font-medium text-gray-900">Vaccine Records</h4>
+                                <p class="text-sm text-gray-500">Manage vaccinations</p>
+                            </div>
+                        </div>
+                    </a>
+
                     <a href="billing.php" class="block p-6 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors">
                         <div class="flex items-center space-x-3">
                             <div class="flex-shrink-0">
@@ -378,9 +294,343 @@ try {
                             </div>
                         </div>
                     </a>
+
+                    <a href="adoption.php" class="block p-6 bg-pink-50 border border-pink-200 rounded-lg hover:bg-pink-100 transition-colors">
+                        <div class="flex items-center space-x-3">
+                            <div class="flex-shrink-0">
+                                <div class="w-10 h-10 bg-pink-500 rounded-full flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="font-medium text-gray-900">Adoption</h4>
+                                <p class="text-sm text-gray-500">View adoption requests</p>
+                            </div>
+                        </div>
+                    </a>
+
+                    <button onclick="showArticlesModal()" class="block p-6 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors">
+                        <div class="flex items-center space-x-3">
+                            <div class="flex-shrink-0">
+                                <div class="w-10 h-10 bg-teal-500 rounded-full flex items-center justify-center">
+                                    <span class="text-white text-lg">📚</span>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="font-medium text-gray-900">Articles & Inquiries</h4>
+                                <p class="text-sm text-gray-500">Manage content & support</p>
+                            </div>
+                        </div>
+                    </button>
                 </div>
             </div>
         </div>
     </main>
+
+    <!-- Articles & Inquiries Modal -->
+    <div id="articlesModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-screen overflow-y-auto">
+                <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                    <h3 class="text-2xl font-semibold text-gray-900">📚 Articles & Inquiries Management</h3>
+                    <button onclick="hideArticlesModal()" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <div class="p-6">
+                    <!-- Tab Navigation -->
+                    <div class="border-b border-gray-200 mb-6">
+                        <nav class="flex space-x-8" aria-label="Tabs">
+                            <button onclick="switchTab('articles')" id="articlesTab" class="border-b-2 border-teal-500 text-teal-600 whitespace-nowrap py-4 px-1 text-sm font-medium">
+                                📖 Articles
+                            </button>
+                            <button onclick="switchTab('inquiries')" id="inquiriesTab" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 text-sm font-medium">
+                                💬 Inquiries
+                            </button>
+                        </nav>
+                    </div>
+
+                    <!-- Articles Tab Content -->
+                    <div id="articlesContent" class="space-y-4">
+                        <div class="flex justify-between items-center mb-4">
+                            <h4 class="text-lg font-semibold text-gray-900">Manage Articles</h4>
+                            <button onclick="showAddArticleForm()" class="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700">
+                                + Add New Article
+                            </button>
+                        </div>
+                        
+                        <div id="articlesList" class="space-y-3">
+                            <!-- Articles will be loaded here -->
+                            <div class="text-center py-8">
+                                <div class="text-4xl mb-2">📚</div>
+                                <p class="text-gray-500">Loading articles...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Inquiries Tab Content -->
+                    <div id="inquiriesContent" class="hidden space-y-4">
+                        <div class="flex justify-between items-center mb-4">
+                            <h4 class="text-lg font-semibold text-gray-900">Manage Inquiries</h4>
+                        </div>
+                        
+                        <div id="inquiriesList" class="space-y-3">
+                            <!-- Inquiries will be loaded here -->
+                            <div class="text-center py-8">
+                                <div class="text-4xl mb-2">💬</div>
+                                <p class="text-gray-500">Loading inquiries...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Article Modal -->
+    <div id="addArticleModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-screen overflow-y-auto">
+                <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                    <h3 class="text-xl font-semibold text-gray-900">Add New Article</h3>
+                    <button onclick="hideAddArticleForm()" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <div class="p-6">
+                    <form id="addArticleForm" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Article Title *</label>
+                            <input type="text" id="articleTitle" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Enter article title">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Summary</label>
+                            <textarea id="articleSummary" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Brief summary of the article"></textarea>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Topic</label>
+                            <select id="articleTopic" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500">
+                                <option value="">Select a topic</option>
+                                <option value="Pet Care Tips">Pet Care Tips</option>
+                                <option value="Veterinary Medicine">Veterinary Medicine</option>
+                                <option value="Pet Nutrition">Pet Nutrition</option>
+                                <option value="Pet Behavior">Pet Behavior</option>
+                                <option value="Emergency Care">Emergency Care</option>
+                                <option value="Preventive Medicine">Preventive Medicine</option>
+                                <option value="Surgery & Procedures">Surgery & Procedures</option>
+                                <option value="Pet Health Issues">Pet Health Issues</option>
+                                <option value="Breed Information">Breed Information</option>
+                                <option value="Vaccination">Vaccination</option>
+                                <option value="Dental Care">Dental Care</option>
+                                <option value="Senior Pet Care">Senior Pet Care</option>
+                                <option value="Puppy/Kitten Care">Puppy/Kitten Care</option>
+                                <option value="Pet Safety">Pet Safety</option>
+                                <option value="General Veterinary">General Veterinary</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                            <input type="text" id="articleTags" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Enter tags separated by commas">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Article Content *</label>
+                            <textarea id="articleContent" rows="10" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Write your article content here..."></textarea>
+                        </div>
+                        
+                        <div class="flex space-x-3 pt-4">
+                            <button type="submit" class="bg-teal-600 text-white px-6 py-2 rounded hover:bg-teal-700">
+                                Publish Article
+                            </button>
+                            <button type="button" onclick="hideAddArticleForm()" class="bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600">
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Articles & Inquiries Modal Functions
+        function showArticlesModal() {
+            document.getElementById('articlesModal').classList.remove('hidden');
+            loadArticles();
+            loadInquiries();
+        }
+        
+        function hideArticlesModal() {
+            document.getElementById('articlesModal').classList.add('hidden');
+            document.getElementById('addArticleModal').classList.add('hidden');
+        }
+        
+        function switchTab(tab) {
+            if (tab === 'articles') {
+                document.getElementById('articlesContent').classList.remove('hidden');
+                document.getElementById('inquiriesContent').classList.add('hidden');
+                document.getElementById('articlesTab').classList.add('border-teal-500', 'text-teal-600');
+                document.getElementById('articlesTab').classList.remove('border-transparent', 'text-gray-500');
+                document.getElementById('inquiriesTab').classList.remove('border-teal-500', 'text-teal-600');
+                document.getElementById('inquiriesTab').classList.add('border-transparent', 'text-gray-500');
+            } else {
+                document.getElementById('inquiriesContent').classList.remove('hidden');
+                document.getElementById('articlesContent').classList.add('hidden');
+                document.getElementById('inquiriesTab').classList.add('border-teal-500', 'text-teal-600');
+                document.getElementById('inquiriesTab').classList.remove('border-transparent', 'text-gray-500');
+                document.getElementById('articlesTab').classList.remove('border-teal-500', 'text-teal-600');
+                document.getElementById('articlesTab').classList.add('border-transparent', 'text-gray-500');
+            }
+        }
+        
+        function showAddArticleForm() {
+            document.getElementById('addArticleModal').classList.remove('hidden');
+        }
+        
+        function hideAddArticleForm() {
+            document.getElementById('addArticleModal').classList.add('hidden');
+        }
+        
+        function loadArticles() {
+            fetch('../articles/api/get_articles.php')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayArticles(data.articles);
+                    } else {
+                        document.getElementById('articlesList').innerHTML = '<div class="text-center py-8"><p class="text-red-500">Failed to load articles</p></div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('articlesList').innerHTML = '<div class="text-center py-8"><p class="text-red-500">Error loading articles</p></div>';
+                });
+        }
+        
+        function loadInquiries() {
+            fetch('../articles/api/get_inquiries.php')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayInquiries(data.inquiries);
+                    } else {
+                        document.getElementById('inquiriesList').innerHTML = '<div class="text-center py-8"><p class="text-red-500">Failed to load inquiries</p></div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('inquiriesList').innerHTML = '<div class="text-center py-8"><p class="text-red-500">Error loading inquiries</p></div>';
+                });
+        }
+        
+        function displayArticles(articles) {
+            const container = document.getElementById('articlesList');
+            if (articles.length === 0) {
+                container.innerHTML = '<div class="text-center py-8"><p class="text-gray-500">No articles found</p></div>';
+                return;
+            }
+            
+            container.innerHTML = articles.map(article => `
+                <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <h5 class="font-semibold text-gray-900 mb-2">${article.title}</h5>
+                            <p class="text-sm text-gray-600 mb-2">${article.summary || 'No summary'}</p>
+                            <div class="flex items-center space-x-4 text-xs text-gray-500">
+                                <span>Topic: ${article.topic || 'General'}</span>
+                                <span>Views: ${article.view_count || 0}</span>
+                                <span>Created: ${new Date(article.created_at).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                        <div class="flex space-x-2 ml-4">
+                            <button onclick="editArticle(${article.article_id})" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                                Edit
+                            </button>
+                            <button onclick="deleteArticle(${article.article_id})" class="text-red-600 hover:text-red-800 text-sm font-medium">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function displayInquiries(inquiries) {
+            const container = document.getElementById('inquiriesList');
+            if (inquiries.length === 0) {
+                container.innerHTML = '<div class="text-center py-8"><p class="text-gray-500">No inquiries found</p></div>';
+                return;
+            }
+            
+            container.innerHTML = inquiries.map(inquiry => `
+                <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <h5 class="font-semibold text-gray-900 mb-2">${inquiry.subject}</h5>
+                            <p class="text-sm text-gray-600 mb-2">${inquiry.message}</p>
+                            <div class="flex items-center space-x-4 text-xs text-gray-500">
+                                <span>From: ${inquiry.user_name || 'Anonymous'}</span>
+                                <span>Status: <span class="px-2 py-1 rounded-full ${getStatusClass(inquiry.status)}">${inquiry.status}</span></span>
+                                <span>Date: ${new Date(inquiry.timestamp).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                        <div class="flex space-x-2 ml-4">
+                            <button onclick="replyToInquiry(${inquiry.inquiry_id})" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                                Reply
+                            </button>
+                            <button onclick="updateInquiryStatus(${inquiry.inquiry_id}, '${inquiry.status === 'Pending' ? 'Replied' : 'Closed'}')" class="text-green-600 hover:text-green-800 text-sm font-medium">
+                                ${inquiry.status === 'Pending' ? 'Mark Replied' : 'Close'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        <?php echo getStatusClassJS(); ?>
+        
+        // Handle form submission
+        document.getElementById('addArticleForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('title', document.getElementById('articleTitle').value);
+            formData.append('summary', document.getElementById('articleSummary').value);
+            formData.append('topic', document.getElementById('articleTopic').value);
+            formData.append('tags', document.getElementById('articleTags').value);
+            formData.append('content', document.getElementById('articleContent').value);
+            
+            fetch('../articles/api/add_article.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Article added successfully!');
+                    hideAddArticleForm();
+                    loadArticles();
+                    // Clear form
+                    document.getElementById('addArticleForm').reset();
+                } else {
+                    alert('Failed to add article: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error adding article');
+            });
+        });
+    </script>
 </body>
 </html> 
