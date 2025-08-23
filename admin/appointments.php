@@ -6,6 +6,8 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true || $_SESSI
     exit();
 }
 
+require_once '../includes/status_helper.php';
+
 $clinic_name = "Caring Paws Veterinary Clinic";
 require_once '../config.php';
 
@@ -81,15 +83,30 @@ try {
     $doctor_columns = $result->fetchAll(PDO::FETCH_COLUMN);
     $phone_column = in_array('phone', $doctor_columns) ? 'phone' : 'contact';
     
-    // Get all appointments
-    $stmt = $pdo->prepare("
-        SELECT a.*, $reason_field, p.animal_name, p.species, u.name as owner_name, u.phone, d.name as doctor_name, d.specialization
-        FROM appointments a
-        JOIN patients p ON a.patient_id = p.patient_id
-        JOIN users u ON p.owner_id = u.user_id
-        JOIN doctors d ON a.doctor_id = d.doctor_id
-        ORDER BY a.$date_column DESC, a.$time_column DESC
-    ");
+    // Pagination for appointments
+    $valid_sizes = [10, 25, 50, 100];
+    $appointments_per_page = isset($_GET['size']) && in_array((int)$_GET['size'], $valid_sizes, true) ? (int)$_GET['size'] : 25;
+    $current_page = isset($_GET['page']) && (int)$_GET['page'] > 0 ? (int)$_GET['page'] : 1;
+
+    // Total count (count from appointments table)
+    $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM appointments");
+    $count_stmt->execute();
+    $total_appointments = (int)$count_stmt->fetchColumn();
+
+    $total_pages = max(1, (int)ceil($total_appointments / $appointments_per_page));
+    if ($current_page > $total_pages) { $current_page = $total_pages; }
+    $offset = ($current_page - 1) * $appointments_per_page;
+
+    // Get paged appointments
+    $stmt = $pdo->prepare(
+        "SELECT a.*, $reason_field, p.animal_name, p.species, u.name as owner_name, u.phone, d.name as doctor_name, d.specialization
+         FROM appointments a
+         JOIN patients p ON a.patient_id = p.patient_id
+         JOIN users u ON p.owner_id = u.user_id
+         JOIN doctors d ON a.doctor_id = d.doctor_id
+         ORDER BY a.$date_column DESC, a.$time_column DESC
+         LIMIT " . (int)$appointments_per_page . " OFFSET " . (int)$offset
+    );
     $stmt->execute();
     $appointments = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
@@ -139,10 +156,23 @@ try {
 
     <div class="max-w-7xl mx-auto p-6">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-3xl font-bold">Appointments Management</h2>
-            <button onclick="showApplyForm()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-                Apply for Appointment
-            </button>
+            <div>
+                <h2 class="text-3xl font-bold">Appointments Management</h2>
+                <p class="text-gray-600 mt-1">Showing page <?php echo (int)$current_page; ?> of <?php echo (int)$total_pages; ?> (<?php echo (int)$total_appointments; ?> total)</p>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div>
+                    <label class="text-sm text-gray-600 mr-2">Page size</label>
+                    <select onchange="changePageSize(this.value)" class="border-gray-300 rounded-md px-2 py-1">
+                        <?php foreach([10,25,50,100] as $size): ?>
+                            <option value="<?php echo $size; ?>" <?php echo $appointments_per_page===$size? 'selected' : ''; ?>><?php echo $size; ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <button onclick="showApplyForm()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                    Apply for Appointment
+                </button>
+            </div>
         </div>
         
         <?php if (!empty($error_message)): ?>
@@ -276,17 +306,7 @@ try {
                                 ?></div>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="px-2 py-1 text-xs font-medium rounded-full 
-                                    <?php 
-                                    switch($appointment['status'] ?? '') {
-                                        case 'Scheduled': echo 'bg-blue-100 text-blue-800'; break;
-                                        case 'Completed': echo 'bg-green-100 text-green-800'; break;
-                                        case 'Cancelled': echo 'bg-red-100 text-red-800'; break;
-                                        default: echo 'bg-gray-100 text-gray-800';
-                                    }
-                                    ?>">
-                                    <?php echo htmlspecialchars($appointment['status'] ?? 'Unknown'); ?>
-                                </span>
+                                <?php echo displayStatusBadge($appointment['status'], 'appointment'); ?>
                             </td>
                             <td class="px-6 py-4 text-sm text-gray-500">
                                 <?php echo htmlspecialchars($appointment['reason'] ?? 'No reason provided'); ?>
@@ -301,6 +321,36 @@ try {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+            </div>
+            <!-- Pagination Controls -->
+            <div class="flex items-center justify-between mt-4">
+                <div class="text-sm text-gray-600">
+                    Showing
+                    <?php
+                        $from = $total_appointments ? ($offset + 1) : 0;
+                        $to = min($offset + $appointments_per_page, $total_appointments);
+                        echo $from . ' to ' . $to . ' of ' . $total_appointments . ' appointments';
+                    ?>
+                </div>
+                <div class="flex items-center space-x-1">
+                    <?php
+                        $queryBase = '?size=' . (int)$appointments_per_page . '&page=';
+                        $prevDisabled = $current_page <= 1;
+                        $nextDisabled = $current_page >= $total_pages;
+                    ?>
+                    <a href="<?php echo $prevDisabled ? '#' : $queryBase . ($current_page - 1); ?>" class="px-3 py-1 rounded border <?php echo $prevDisabled ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'; ?>">Prev</a>
+                    <?php
+                        $start = max(1, $current_page - 2);
+                        $end = min($total_pages, $current_page + 2);
+                        if ($start > 1) echo '<span class=\'px-2\'>...</span>';
+                        for ($i=$start; $i<=$end; $i++) {
+                            $active = $i === $current_page;
+                            echo '<a href="' . $queryBase . $i . '" class="px-3 py-1 rounded border ' . ($active ? 'bg-blue-600 text-white border-blue-600' : 'text-gray-700 hover:bg-gray-50') . '">' . $i . '</a>';
+                        }
+                        if ($end < $total_pages) echo '<span class=\'px-2\'>...</span>';
+                    ?>
+                    <a href="<?php echo $nextDisabled ? '#' : $queryBase . ($current_page + 1); ?>" class="px-3 py-1 rounded border <?php echo $nextDisabled ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'; ?>">Next</a>
+                </div>
             </div>
         <?php else: ?>
             <div class="text-center py-12">
@@ -332,6 +382,12 @@ try {
     </div>
 
     <script>
+        function changePageSize(size) {
+            const params = new URLSearchParams(window.location.search);
+            params.set('size', size);
+            params.set('page', '1');
+            window.location.search = params.toString();
+        }
         function showApplyForm() {
             document.getElementById('applyAppointmentForm').classList.remove('hidden');
         }

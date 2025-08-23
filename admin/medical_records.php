@@ -13,14 +13,30 @@ $medical_records = [];
 $error_message = "";
 
 try {
-    $stmt = $pdo->prepare("
-        SELECT mr.*, p.animal_name, p.species, u.name as owner_name, d.name as doctor_name, d.specialization
-        FROM medicalrecords mr
-        JOIN patients p ON mr.patient_id = p.patient_id
-        JOIN users u ON p.owner_id = u.user_id
-        JOIN doctors d ON mr.doctor_id = d.doctor_id
-        ORDER BY mr.date DESC
-    ");
+    // Pagination settings
+    $valid_sizes = [10, 25, 50, 100];
+    $records_per_page = isset($_GET['size']) && in_array((int)$_GET['size'], $valid_sizes, true) ? (int)$_GET['size'] : 25;
+    $current_page = isset($_GET['page']) && (int)$_GET['page'] > 0 ? (int)$_GET['page'] : 1;
+
+    // Total count
+    $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM medicalrecords");
+    $count_stmt->execute();
+    $total_records = (int)$count_stmt->fetchColumn();
+
+    $total_pages = max(1, (int)ceil($total_records / $records_per_page));
+    if ($current_page > $total_pages) { $current_page = $total_pages; }
+    $offset = ($current_page - 1) * $records_per_page;
+
+    // Page fetch
+    $stmt = $pdo->prepare(
+        "SELECT mr.*, p.animal_name, p.species, u.name as owner_name, d.name as doctor_name, d.specialization
+         FROM medicalrecords mr
+         JOIN patients p ON mr.patient_id = p.patient_id
+         JOIN users u ON p.owner_id = u.user_id
+         JOIN doctors d ON mr.doctor_id = d.doctor_id
+         ORDER BY mr.date DESC
+         LIMIT " . (int)$records_per_page . " OFFSET " . (int)$offset
+    );
     $stmt->execute();
     $medical_records = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch(PDOException $e) {
@@ -45,7 +61,20 @@ try {
     </header>
 
     <div class="max-w-7xl mx-auto p-6">
-        <h2 class="text-3xl font-bold mb-6">Medical Records Management</h2>
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h2 class="text-3xl font-bold">Medical Records Management</h2>
+                <p class="text-gray-600 mt-1">Showing page <?php echo (int)$current_page; ?> of <?php echo (int)$total_pages; ?> (<?php echo (int)$total_records; ?> total)</p>
+            </div>
+            <div>
+                <label class="text-sm text-gray-600 mr-2">Page size</label>
+                <select onchange="changePageSize(this.value)" class="border-gray-300 rounded-md px-2 py-1">
+                    <?php foreach([10,25,50,100] as $size): ?>
+                        <option value="<?php echo $size; ?>" <?php echo $records_per_page===$size? 'selected' : ''; ?>><?php echo $size; ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        </div>
         
         <?php if (!empty($error_message)): ?>
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -93,6 +122,36 @@ try {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+            </div>
+            <!-- Pagination Controls -->
+            <div class="flex items-center justify-between mt-4">
+                <div class="text-sm text-gray-600">
+                    Showing
+                    <?php
+                        $from = $total_records ? ($offset + 1) : 0;
+                        $to = min($offset + $records_per_page, $total_records);
+                        echo $from . ' to ' . $to . ' of ' . $total_records . ' records';
+                    ?>
+                </div>
+                <div class="flex items-center space-x-1">
+                    <?php
+                        $queryBase = '?size=' . (int)$records_per_page . '&page=';
+                        $prevDisabled = $current_page <= 1;
+                        $nextDisabled = $current_page >= $total_pages;
+                    ?>
+                    <a href="<?php echo $prevDisabled ? '#' : $queryBase . ($current_page - 1); ?>" class="px-3 py-1 rounded border <?php echo $prevDisabled ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'; ?>">Prev</a>
+                    <?php
+                        $start = max(1, $current_page - 2);
+                        $end = min($total_pages, $current_page + 2);
+                        if ($start > 1) echo '<span class=\'px-2\'>...</span>';
+                        for ($i=$start; $i<=$end; $i++) {
+                            $active = $i === $current_page;
+                            echo '<a href="' . $queryBase . $i . '" class="px-3 py-1 rounded border ' . ($active ? 'bg-blue-600 text-white border-blue-600' : 'text-gray-700 hover:bg-gray-50') . '">' . $i . '</a>';
+                        }
+                        if ($end < $total_pages) echo '<span class=\'px-2\'>...</span>';
+                    ?>
+                    <a href="<?php echo $nextDisabled ? '#' : $queryBase . ($current_page + 1); ?>" class="px-3 py-1 rounded border <?php echo $nextDisabled ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'; ?>">Next</a>
+                </div>
             </div>
         <?php else: ?>
             <div class="text-center py-12">

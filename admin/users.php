@@ -92,13 +92,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
             case 'delete':
                 try {
-                    if ($_POST['user_id'] == $_SESSION['user_id']) {
-                        $error_message = "You cannot delete your own account!";
-                    } else {
-                        $stmt = $pdo->prepare("DELETE FROM users WHERE user_id = ?");
-                        $stmt->execute([$_POST['user_id']]);
-                        $success_message = "User deleted successfully!";
-                    }
+                    // Check if user has any pets
+                    $stmt = $pdo->prepare("SELECT COUNT(*) FROM patients WHERE owner_id = ?");
+                    $stmt->execute([$_POST['user_id']]);
+                    $pet_count = $stmt->fetchColumn();
+                    
+                    // Proceed with deletion regardless, but mention pets if any
+                    $stmt = $pdo->prepare("DELETE FROM users WHERE user_id = ?");
+                    $stmt->execute([$_POST['user_id']]);
+                    $success_message = $pet_count > 0
+                        ? "User deleted successfully! Note: {$pet_count} pet(s) were linked and should be reassigned."
+                        : "User deleted successfully!";
                 } catch(PDOException $e) {
                     $error_message = "Failed to delete user: " . $e->getMessage();
                 }
@@ -107,8 +111,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Pagination settings
+$users_per_page = isset($_GET['size']) ? (int)$_GET['size'] : 10;
+$users_per_page = in_array($users_per_page, [10, 25, 50, 100]) ? $users_per_page : 10; // Validate page size
+$current_page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$current_page = max(1, $current_page); // Ensure page is at least 1
+
 try {
-    $stmt = $pdo->prepare("SELECT * FROM users ORDER BY user_id DESC");
+         // Get total count of all users
+     $count_stmt = $pdo->prepare("SELECT COUNT(*) as total FROM users");
+     $count_stmt->execute();
+     $total_users = $count_stmt->fetchColumn();
+     
+     $total_pages = ceil($total_users / $users_per_page);
+     $current_page = min($current_page, $total_pages); // Ensure page doesn't exceed total
+     $offset = ($current_page - 1) * $users_per_page;
+     
+     // Show all users with their pet counts with pagination
+     $stmt = $pdo->prepare(
+         "SELECT u.user_id, u.name, u.email, u.phone, u.address, 
+                 COALESCE(p.pet_count, 0) AS pet_count
+          FROM users u
+          LEFT JOIN (
+              SELECT owner_id, COUNT(*) AS pet_count
+              FROM patients
+              GROUP BY owner_id
+          ) p ON p.owner_id = u.user_id
+          ORDER BY u.user_id DESC
+          LIMIT " . (int)$users_per_page . " OFFSET " . (int)$offset
+     );
     $stmt->execute();
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch(PDOException $e) {
@@ -130,18 +161,32 @@ try {
             <h1 class="text-2xl font-bold"><?php echo $clinic_name; ?> - Users</h1>
             <div class="flex items-center space-x-4">
                 <span class="text-sm">Welcome, <?php echo htmlspecialchars($admin_name); ?></span>
-                <a href="dashboard.php" class="bg-blue-700 px-4 py-2 rounded">Dashboard</a>
+            <a href="dashboard.php" class="bg-blue-700 px-4 py-2 rounded">Dashboard</a>
             </div>
         </div>
     </header>
 
     <div class="max-w-7xl mx-auto p-6">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-3xl font-bold">Users Management</h2>
-            <button onclick="showAddForm()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-                Add New User
-            </button>
-        </div>
+                          <div class="flex justify-between items-center mb-6">
+              <h2 class="text-3xl font-bold">Users Management</h2>
+              <p class="text-gray-600 mt-2">Showing all users with their pet information</p>
+             <div class="flex items-center space-x-4">
+                 <!-- Page Size Selector -->
+                 <div class="flex items-center space-x-2">
+                     <label class="text-sm text-gray-700">Show:</label>
+                     <select onchange="changePageSize(this.value)" class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                         <option value="10" <?php echo $users_per_page == 10 ? 'selected' : ''; ?>>10</option>
+                         <option value="25" <?php echo $users_per_page == 25 ? 'selected' : ''; ?>>25</option>
+                         <option value="50" <?php echo $users_per_page == 50 ? 'selected' : ''; ?>>50</option>
+                         <option value="100" <?php echo $users_per_page == 100 ? 'selected' : ''; ?>>100</option>
+                     </select>
+                     <span class="text-sm text-gray-700">per page</span>
+                 </div>
+                 <button onclick="showAddForm()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                     Add New User
+                 </button>
+             </div>
+         </div>
         
         <?php if (!empty($error_message)): ?>
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -250,17 +295,15 @@ try {
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pets</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
                         <?php foreach($users as $user): ?>
-                        <tr class="hover:bg-gray-50 <?php echo $user['user_id'] == $_SESSION['user_id'] ? 'bg-blue-50' : ''; ?>">
+                        <tr class="hover:bg-gray-50">
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                 <?php echo htmlspecialchars($user['user_id']); ?>
-                                <?php if ($user['user_id'] == $_SESSION['user_id']): ?>
-                                    <span class="ml-2 text-xs text-blue-600">(You)</span>
-                                <?php endif; ?>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                 <?php echo htmlspecialchars($user['name']); ?>
@@ -273,24 +316,106 @@ try {
                             </td>
                             <td class="px-6 py-4 text-sm text-gray-500">
                                 <div class="max-w-xs truncate">
-                                    <?php echo htmlspecialchars($user['address'] ?? 'N/A'); ?>
+                                <?php echo htmlspecialchars($user['address'] ?? 'N/A'); ?>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500">
+                                <div class="text-xs">
+                                    <?php if ($user['pet_count'] > 0): ?>
+                                        <span class="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                            <?php echo $user['pet_count']; ?> Pet<?php echo $user['pet_count'] > 1 ? 's' : ''; ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="text-gray-400">0 Pets</span>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 <button onclick="editUser(<?php echo htmlspecialchars(json_encode($user)); ?>)" 
                                         class="text-blue-600 hover:text-blue-900 mr-3">Edit</button>
-                                <?php if ($user['user_id'] != $_SESSION['user_id']): ?>
-                                    <button onclick="deleteUser(<?php echo $user['user_id']; ?>)" 
-                                            class="text-red-600 hover:text-red-900">Delete</button>
-                                <?php else: ?>
-                                    <span class="text-gray-400">Delete</span>
-                                <?php endif; ?>
+                                <button onclick="deleteUser(<?php echo $user['user_id']; ?>)" 
+                                        class="text-red-600 hover:text-red-900">
+                                    Delete
+                                </button>
                             </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
             </div>
+             
+             <!-- Pagination Controls -->
+             <?php if ($total_pages > 1): ?>
+                 <div class="bg-white px-6 py-4 border-t border-gray-200">
+                     <div class="flex items-center justify-between">
+                         <div class="text-sm text-gray-700">
+                             Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $users_per_page, $total_users); ?> of <?php echo $total_users; ?> users
+                         </div>
+                         <div class="flex items-center space-x-2">
+                             <!-- Previous Page -->
+                             <?php if ($current_page > 1): ?>
+                                 <a href="?page=<?php echo $current_page - 1; ?>&size=<?php echo $users_per_page; ?>" 
+                                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                     Previous
+                                 </a>
+                             <?php else: ?>
+                                 <span class="px-3 py-2 text-sm font-medium text-gray-300 bg-gray-100 border border-gray-200 rounded-md cursor-not-allowed">
+                                     Previous
+                                 </span>
+                             <?php endif; ?>
+                             
+                             <!-- Page Numbers -->
+                             <?php
+                             $start_page = max(1, $current_page - 2);
+                             $end_page = min($total_pages, $current_page + 2);
+                             
+                             if ($start_page > 1): ?>
+                                 <a href="?page=1&size=<?php echo $users_per_page; ?>" class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                     1
+                                 </a>
+                                 <?php if ($start_page > 2): ?>
+                                     <span class="px-2 py-2 text-sm text-gray-500">...</span>
+                                 <?php endif; ?>
+                             <?php endif; ?>
+                             
+                             <?php for ($i = $start_page; $i <= $end_page; $i++): ?>
+                                 <?php if ($i == $current_page): ?>
+                                     <span class="px-3 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-md">
+                                         <?php echo $i; ?>
+                                     </span>
+                                 <?php else: ?>
+                                     <a href="?page=<?php echo $i; ?>&size=<?php echo $users_per_page; ?>" 
+                                        class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                         <?php echo $i; ?>
+                                     </a>
+                                 <?php endif; ?>
+                             <?php endfor; ?>
+                             
+                             <?php if ($end_page < $total_pages): ?>
+                                 <?php if ($end_page < $total_pages - 1): ?>
+                                     <span class="px-2 py-2 text-sm text-gray-500">...</span>
+                                 <?php endif; ?>
+                                 <a href="?page=<?php echo $total_pages; ?>&size=<?php echo $users_per_page; ?>" 
+                                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                     <?php echo $total_pages; ?>
+                                 </a>
+                             <?php endif; ?>
+                             
+                             <!-- Next Page -->
+                             <?php if ($current_page < $total_pages): ?>
+                                 <a href="?page=<?php echo $current_page + 1; ?>&size=<?php echo $users_per_page; ?>" 
+                                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                                     Next
+                                 </a>
+                             <?php else: ?>
+                                 <span class="px-3 py-2 text-sm font-medium text-gray-300 bg-gray-100 border border-gray-200 rounded-md cursor-not-allowed">
+                                     Next
+                                 </span>
+                             <?php endif; ?>
+                         </div>
+                     </div>
+                 </div>
+             <?php endif; ?>
         <?php else: ?>
             <div class="text-center py-12">
                 <p class="text-gray-500">No users found.</p>
@@ -354,6 +479,11 @@ try {
             document.getElementById('deleteModal').classList.add('hidden');
         }
         
+        function changePageSize(size) {
+            // Redirect to first page with new size
+            window.location.href = '?page=1&size=' + size;
+        }
+        
         // Auto-hide success/error messages after 5 seconds
         setTimeout(function() {
             const messages = document.querySelectorAll('.bg-green-100, .bg-red-100');
@@ -363,4 +493,4 @@ try {
         }, 5000);
     </script>
 </body>
-</html>
+</html> 

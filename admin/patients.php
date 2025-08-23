@@ -24,8 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'add':
                 try {
                     $stmt = $pdo->prepare("
-                        INSERT INTO patients (animal_name, species, breed, age, gender, weight, color, owner_id, medical_history, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                        INSERT INTO patients (animal_name, species, breed, age, gender, owner_id)
+                        VALUES (?, ?, ?, ?, ?, ?)
                     ");
                     $stmt->execute([
                         $_POST['animal_name'],
@@ -33,10 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_POST['breed'],
                         $_POST['age'],
                         $_POST['gender'],
-                        $_POST['weight'],
-                        $_POST['color'],
-                        $_POST['owner_id'],
-                        $_POST['medical_history']
+                        $_POST['owner_id']
                     ]);
                     $success_message = "Patient added successfully!";
                 } catch(PDOException $e) {
@@ -49,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt = $pdo->prepare("
                         UPDATE patients 
                         SET animal_name = ?, species = ?, breed = ?, age = ?, gender = ?, 
-                            weight = ?, color = ?, owner_id = ?, medical_history = ?
+                            owner_id = ?
                         WHERE patient_id = ?
                     ");
                     $stmt->execute([
@@ -58,10 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_POST['breed'],
                         $_POST['age'],
                         $_POST['gender'],
-                        $_POST['weight'],
-                        $_POST['color'],
                         $_POST['owner_id'],
-                        $_POST['medical_history'],
                         $_POST['patient_id']
                     ]);
                     $success_message = "Patient updated successfully!";
@@ -88,14 +82,28 @@ try {
     $stmt = $pdo->prepare("SELECT user_id, name, email, phone FROM users ORDER BY name");
     $stmt->execute();
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Get all patients with owner information
-    $stmt = $pdo->prepare("
-        SELECT p.*, u.name as owner_name, u.email as owner_email, u.phone as owner_phone
-        FROM patients p
-        JOIN users u ON p.owner_id = u.user_id
-        ORDER BY p.patient_id DESC
-    ");
+
+    // Pagination
+    $valid_sizes = [10, 25, 50, 100];
+    $patients_per_page = isset($_GET['size']) && in_array((int)$_GET['size'], $valid_sizes, true) ? (int)$_GET['size'] : 25;
+    $current_page = isset($_GET['page']) && (int)$_GET['page'] > 0 ? (int)$_GET['page'] : 1;
+
+    $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM patients");
+    $count_stmt->execute();
+    $total_patients = (int)$count_stmt->fetchColumn();
+
+    $total_pages = max(1, (int)ceil($total_patients / $patients_per_page));
+    if ($current_page > $total_pages) { $current_page = $total_pages; }
+    $offset = ($current_page - 1) * $patients_per_page;
+
+    // Get patients with owner information (paged)
+    $stmt = $pdo->prepare(
+        "SELECT p.*, u.name as owner_name, u.email as owner_email, u.phone as owner_phone
+         FROM patients p
+         JOIN users u ON p.owner_id = u.user_id
+         ORDER BY p.patient_id DESC
+         LIMIT " . (int)$patients_per_page . " OFFSET " . (int)$offset
+    );
     $stmt->execute();
     $patients = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch(PDOException $e) {
@@ -124,10 +132,23 @@ try {
 
     <div class="max-w-7xl mx-auto p-6">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-3xl font-bold">Patients Management</h2>
-            <button onclick="showAddForm()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-                Add New Patient
-            </button>
+            <div>
+                <h2 class="text-3xl font-bold">Patients Management</h2>
+                <p class="text-gray-600 mt-1">Showing page <?php echo (int)$current_page; ?> of <?php echo (int)$total_pages; ?> (<?php echo (int)$total_patients; ?> total)</p>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div>
+                    <label class="text-sm text-gray-600 mr-2">Page size</label>
+                    <select onchange="changePageSize(this.value)" class="border-gray-300 rounded-md px-2 py-1">
+                        <?php foreach([10,25,50,100] as $size): ?>
+                            <option value="<?php echo $size; ?>" <?php echo $patients_per_page===$size? 'selected' : ''; ?>><?php echo $size; ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <button onclick="showAddForm()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                    Add New Patient
+                </button>
+            </div>
         </div>
         
         <?php if (!empty($error_message)): ?>
@@ -189,20 +210,7 @@ try {
                     </select>
                 </div>
                 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
-                    <input type="number" name="weight" min="0" step="0.1" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Color</label>
-                    <input type="text" name="color" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                
-                <div class="md:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Medical History</label>
-                    <textarea name="medical_history" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                </div>
+
                 
                 <div class="md:col-span-2 flex gap-2">
                     <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
@@ -263,20 +271,7 @@ try {
                     </select>
                 </div>
                 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
-                    <input type="number" name="weight" id="edit_weight" min="0" step="0.1" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Color</label>
-                    <input type="text" name="color" id="edit_color" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                
-                <div class="md:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Medical History</label>
-                    <textarea name="medical_history" id="edit_medical_history" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                </div>
+
                 
                 <div class="md:col-span-2 flex gap-2">
                     <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
@@ -336,6 +331,36 @@ try {
                     </tbody>
                 </table>
             </div>
+            <!-- Pagination Controls -->
+            <div class="flex items-center justify-between mt-4">
+                <div class="text-sm text-gray-600">
+                    Showing
+                    <?php
+                        $from = $total_patients ? ($offset + 1) : 0;
+                        $to = min($offset + $patients_per_page, $total_patients);
+                        echo $from . ' to ' . $to . ' of ' . $total_patients . ' patients';
+                    ?>
+                </div>
+                <div class="flex items-center space-x-1">
+                    <?php
+                        $queryBase = '?size=' . (int)$patients_per_page . '&page=';
+                        $prevDisabled = $current_page <= 1;
+                        $nextDisabled = $current_page >= $total_pages;
+                    ?>
+                    <a href="<?php echo $prevDisabled ? '#' : $queryBase . ($current_page - 1); ?>" class="px-3 py-1 rounded border <?php echo $prevDisabled ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'; ?>">Prev</a>
+                    <?php
+                        $start = max(1, $current_page - 2);
+                        $end = min($total_pages, $current_page + 2);
+                        if ($start > 1) echo '<span class=\'px-2\'>...</span>';
+                        for ($i=$start; $i<=$end; $i++) {
+                            $active = $i === $current_page;
+                            echo '<a href="' . $queryBase . $i . '" class="px-3 py-1 rounded border ' . ($active ? 'bg-blue-600 text-white border-blue-600' : 'text-gray-700 hover:bg-gray-50') . '">' . $i . '</a>';
+                        }
+                        if ($end < $total_pages) echo '<span class=\'px-2\'>...</span>';
+                    ?>
+                    <a href="<?php echo $nextDisabled ? '#' : $queryBase . ($current_page + 1); ?>" class="px-3 py-1 rounded border <?php echo $nextDisabled ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'; ?>">Next</a>
+                </div>
+            </div>
         <?php else: ?>
             <div class="text-center py-12">
                 <p class="text-gray-500">No patients found.</p>
@@ -366,6 +391,12 @@ try {
     </div>
 
     <script>
+        function changePageSize(size) {
+            const params = new URLSearchParams(window.location.search);
+            params.set('size', size);
+            params.set('page', '1');
+            window.location.search = params.toString();
+        }
         function showAddForm() {
             document.getElementById('addPatientForm').classList.remove('hidden');
             document.getElementById('editPatientForm').classList.add('hidden');
@@ -383,9 +414,6 @@ try {
             document.getElementById('edit_breed').value = patient.breed || '';
             document.getElementById('edit_age').value = patient.age || '';
             document.getElementById('edit_gender').value = patient.gender;
-            document.getElementById('edit_weight').value = patient.weight || '';
-            document.getElementById('edit_color').value = patient.color || '';
-            document.getElementById('edit_medical_history').value = patient.medical_history || '';
             
             document.getElementById('addPatientForm').classList.add('hidden');
             document.getElementById('editPatientForm').classList.remove('hidden');

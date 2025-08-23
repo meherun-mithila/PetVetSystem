@@ -12,13 +12,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 	exit;
 }
 
-function readRequestData(): array {
+function readJsonOrForm(): array {
 	$raw = file_get_contents('php://input');
-	$data = json_decode($raw, true);
-	if (is_array($data)) { return $data; }
-	if (!empty($_POST)) { return $_POST; }
-	if (!empty($_GET)) { return $_GET; }
-	return [];
+	if (is_string($raw) && $raw !== '') {
+		$decoded = json_decode($raw, true);
+		if (is_array($decoded)) { return $decoded; }
+	}
+	return !empty($_POST) ? $_POST : (!empty($_GET) ? $_GET : []);
 }
 
 try {
@@ -28,61 +28,82 @@ try {
 		exit;
 	}
 
-	$body = readRequestData();
-	$email = trim((string)($body['email'] ?? ($_SESSION['user_email'] ?? '')));
-	$otp = trim((string)($body['otp'] ?? ''));
+	$body = readJsonOrForm();
+	$email = trim((string)($body['email'] ?? ''));
+	$code = trim((string)($body['otp'] ?? $body['code'] ?? ''));
 
-	if ($email === '' || $otp === '') {
+	if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
 		http_response_code(400);
-		echo json_encode(['success' => false, 'message' => 'Email and OTP are required']);
+		echo json_encode(['success' => false, 'message' => 'Valid email is required']);
+		exit;
+	}
+	if ($code === '' || !preg_match('/^\d{4,8}$/', $code)) {
+		http_response_code(400);
+		echo json_encode(['success' => false, 'message' => 'Valid OTP is required']);
 		exit;
 	}
 
-	$stmt = $pdo->prepare('SELECT id, user_id, otp_code, is_used, attempts, expires_at FROM email_otps WHERE email = ? ORDER BY id DESC LIMIT 1');
+	// Find latest unused OTP for this email
+	$stmt = $pdo->prepare('SELECT * FROM email_otps WHERE email = ? AND is_used = 0 ORDER BY id DESC LIMIT 1');
 	$stmt->execute([$email]);
 	$otpRow = $stmt->fetch(PDO::FETCH_ASSOC);
-
 	if (!$otpRow) {
-		http_response_code(404);
-		echo json_encode(['success' => false, 'message' => 'No OTP found for this email']);
+		http_response_code(400);
+		echo json_encode(['success' => false, 'message' => 'No active code. Please request a new OTP.']);
 		exit;
 	}
 
 	$now = new DateTime();
-	$expiresAt = $otpRow['expires_at'] ? new DateTime($otpRow['expires_at']) : null;
+	$expiresAt = new DateTime((string)$otpRow['expires_at']);
+	$attempts = (int)($otpRow['attempts'] ?? 0);
 
-	if ((int)$otpRow['is_used'] === 1) {
-		echo json_encode(['success' => false, 'message' => 'OTP already used']);
+	// Optional attempt limit
+	if ($attempts >= 5) {
+		http_response_code(429);
+		echo json_encode(['success' => false, 'message' => 'Too many attempts. Request a new OTP.']);
 		exit;
 	}
 
-	if ($expiresAt && $now > $expiresAt) {
-		echo json_encode(['success' => false, 'message' => 'OTP expired']);
-		exit;
-	}
-
-	if ($otpRow['otp_code'] !== $otp) {
-		$upd = $pdo->prepare('UPDATE email_otps SET attempts = attempts + 1 WHERE id = ?');
-		$upd->execute([$otpRow['id']]);
-		echo json_encode(['success' => false, 'message' => 'Invalid OTP']);
-		exit;
-	}
-
-	$pdo->beginTransaction();
-	try {
+	// Check expiry
+	if ($now > $expiresAt) {
+		// mark used to prevent reuse
 		$upd = $pdo->prepare('UPDATE email_otps SET is_used = 1 WHERE id = ?');
 		$upd->execute([$otpRow['id']]);
-		try {
-			$u = $pdo->prepare('UPDATE users SET is_verified = 1 WHERE user_id = ?');
-			$u->execute([(int)$otpRow['user_id']]);
-		} catch (PDOException $e) { }
-		$pdo->commit();
-		echo json_encode(['success' => true, 'message' => 'Email verified successfully']);
-	} catch (Throwable $e) {
-		$pdo->rollBack();
-		http_response_code(500);
-		echo json_encode(['success' => false, 'message' => 'Verification failed']);
+		http_response_code(400);
+		echo json_encode(['success' => false, 'message' => 'Code expired. Request a new OTP.']);
+		exit;
 	}
+
+	// Compare
+	if (hash_equals((string)$otpRow['otp_code'], $code)) {
+		$pdo->beginTransaction();
+		try {
+			$use = $pdo->prepare('UPDATE email_otps SET is_used = 1 WHERE id = ?');
+			$use->execute([$otpRow['id']]);
+
+			// Set user verified if exists
+			if (!empty($otpRow['user_id'])) {
+				try {
+					$verifyUser = $pdo->prepare('UPDATE users SET is_verified = 1 WHERE user_id = ?');
+					$verifyUser->execute([(int)$otpRow['user_id']]);
+				} catch (Throwable $e) {
+					// users table may not have is_verified; ignore
+				}
+			}
+			$pdo->commit();
+			echo json_encode(['success' => true, 'message' => 'OTP verified successfully']);
+			return;
+		} catch (Throwable $e) {
+			$pdo->rollBack();
+			throw $e;
+		}
+	}
+
+	// Wrong code: increment attempts
+	$inc = $pdo->prepare('UPDATE email_otps SET attempts = attempts + 1 WHERE id = ?');
+	$inc->execute([$otpRow['id']]);
+	http_response_code(400);
+	echo json_encode(['success' => false, 'message' => 'Invalid code. Please try again.']);
 } catch (Throwable $e) {
 	http_response_code(500);
 	echo json_encode(['success' => false, 'message' => 'Server error']);

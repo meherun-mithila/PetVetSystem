@@ -23,18 +23,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'add':
                 try {
                     $stmt = $pdo->prepare("
-                        INSERT INTO doctors (name, specialization, email, phone, address, availability, experience_years, qualifications)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO doctors (name, specialization, area, contact, address, availability)
+                        VALUES (?, ?, ?, ?, ?, ?)
                     ");
                     $stmt->execute([
                         $_POST['name'],
                         $_POST['specialization'],
-                        $_POST['email'],
-                        $_POST['phone'],
+                        $_POST['area'],
+                        $_POST['contact'],
                         $_POST['address'],
-                        $_POST['availability'],
-                        $_POST['experience_years'],
-                        $_POST['qualifications']
+                        $_POST['availability']
                     ]);
                     $success_message = "Doctor added successfully!";
                 } catch(PDOException $e) {
@@ -46,19 +44,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $stmt = $pdo->prepare("
                         UPDATE doctors 
-                        SET name = ?, specialization = ?, email = ?, phone = ?, address = ?, 
-                            availability = ?, experience_years = ?, qualifications = ?
+                        SET name = ?, specialization = ?, area = ?, contact = ?, address = ?, 
+                            availability = ?
                         WHERE doctor_id = ?
                     ");
                     $stmt->execute([
                         $_POST['name'],
                         $_POST['specialization'],
-                        $_POST['email'],
-                        $_POST['phone'],
+                        $_POST['area'],
+                        $_POST['contact'],
                         $_POST['address'],
                         $_POST['availability'],
-                        $_POST['experience_years'],
-                        $_POST['qualifications'],
                         $_POST['doctor_id']
                     ]);
                     $success_message = "Doctor updated successfully!";
@@ -81,7 +77,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 try {
-    $stmt = $pdo->prepare("SELECT * FROM doctors ORDER BY name");
+    // Pagination
+    $valid_sizes = [10, 25, 50, 100];
+    $doctors_per_page = isset($_GET['size']) && in_array((int)$_GET['size'], $valid_sizes, true) ? (int)$_GET['size'] : 25;
+    $current_page = isset($_GET['page']) && (int)$_GET['page'] > 0 ? (int)$_GET['page'] : 1;
+
+    $count_stmt = $pdo->prepare("SELECT COUNT(*) FROM doctors");
+    $count_stmt->execute();
+    $total_doctors = (int)$count_stmt->fetchColumn();
+
+    $total_pages = max(1, (int)ceil($total_doctors / $doctors_per_page));
+    if ($current_page > $total_pages) { $current_page = $total_pages; }
+    $offset = ($current_page - 1) * $doctors_per_page;
+
+    $stmt = $pdo->prepare(
+        "SELECT * FROM doctors ORDER BY name LIMIT " . (int)$doctors_per_page . " OFFSET " . (int)$offset
+    );
     $stmt->execute();
     $doctors = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch(PDOException $e) {
@@ -103,17 +114,30 @@ try {
             <h1 class="text-2xl font-bold"><?php echo $clinic_name; ?> - Doctors</h1>
             <div class="flex items-center space-x-4">
                 <span class="text-sm">Welcome, <?php echo htmlspecialchars($admin_name); ?></span>
-                <a href="dashboard.php" class="bg-blue-700 px-4 py-2 rounded">Dashboard</a>
+            <a href="dashboard.php" class="bg-blue-700 px-4 py-2 rounded">Dashboard</a>
             </div>
         </div>
     </header>
 
     <div class="max-w-7xl mx-auto p-6">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-3xl font-bold">Doctors Management</h2>
-            <button onclick="showAddForm()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-                Add New Doctor
-            </button>
+            <div>
+                <h2 class="text-3xl font-bold">Doctors Management</h2>
+                <p class="text-gray-600 mt-1">Showing page <?php echo (int)$current_page; ?> of <?php echo (int)$total_pages; ?> (<?php echo (int)$total_doctors; ?> total)</p>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div>
+                    <label class="text-sm text-gray-600 mr-2">Page size</label>
+                    <select onchange="changePageSize(this.value)" class="border-gray-300 rounded-md px-2 py-1">
+                        <?php foreach([10,25,50,100] as $size): ?>
+                            <option value="<?php echo $size; ?>" <?php echo $doctors_per_page===$size? 'selected' : ''; ?>><?php echo $size; ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <button onclick="showAddForm()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                    Add New Doctor
+                </button>
+            </div>
         </div>
         
         <?php if (!empty($error_message)): ?>
@@ -145,13 +169,13 @@ try {
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input type="email" name="email" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Area</label>
+                    <input type="text" name="area" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                    <input type="tel" name="phone" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Contact</label>
+                    <input type="tel" name="contact" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 
                 <div>
@@ -166,16 +190,6 @@ try {
                         <option value="Busy">Busy</option>
                         <option value="Unavailable">Unavailable</option>
                     </select>
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Experience (Years)</label>
-                    <input type="number" name="experience_years" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Qualifications</label>
-                    <input type="text" name="qualifications" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 
                 <div class="md:col-span-2 flex gap-2">
@@ -207,13 +221,13 @@ try {
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input type="email" name="email" id="edit_email" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Area</label>
+                    <input type="text" name="area" id="edit_area" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                    <input type="tel" name="phone" id="edit_phone" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Contact</label>
+                    <input type="tel" name="contact" id="edit_contact" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 
                 <div>
@@ -228,16 +242,6 @@ try {
                         <option value="Busy">Busy</option>
                         <option value="Unavailable">Unavailable</option>
                     </select>
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Experience (Years)</label>
-                    <input type="number" name="experience_years" id="edit_experience_years" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Qualifications</label>
-                    <input type="text" name="qualifications" id="edit_qualifications" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 
                 <div class="md:col-span-2 flex gap-2">
@@ -258,8 +262,8 @@ try {
                         <tr>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Specialization</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Area</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Availability</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -275,10 +279,10 @@ try {
                                 <?php echo htmlspecialchars($doctor['specialization'] ?? 'N/A'); ?>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <?php echo htmlspecialchars($doctor['phone'] ?? 'N/A'); ?>
+                                <?php echo htmlspecialchars($doctor['area'] ?? 'N/A'); ?>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <?php echo htmlspecialchars($doctor['email'] ?? 'N/A'); ?>
+                                <?php echo htmlspecialchars($doctor['contact'] ?? 'N/A'); ?>
                             </td>
                             <td class="px-6 py-4 text-sm text-gray-500">
                                 <div class="max-w-xs truncate">
@@ -302,6 +306,36 @@ try {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+            </div>
+            <!-- Pagination Controls -->
+            <div class="flex items-center justify-between mt-4">
+                <div class="text-sm text-gray-600">
+                    Showing
+                    <?php
+                        $from = $total_doctors ? ($offset + 1) : 0;
+                        $to = min($offset + $doctors_per_page, $total_doctors);
+                        echo $from . ' to ' . $to . ' of ' . $total_doctors . ' doctors';
+                    ?>
+                </div>
+                <div class="flex items-center space-x-1">
+                    <?php
+                        $queryBase = '?size=' . (int)$doctors_per_page . '&page=';
+                        $prevDisabled = $current_page <= 1;
+                        $nextDisabled = $current_page >= $total_pages;
+                    ?>
+                    <a href="<?php echo $prevDisabled ? '#' : $queryBase . ($current_page - 1); ?>" class="px-3 py-1 rounded border <?php echo $prevDisabled ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'; ?>">Prev</a>
+                    <?php
+                        $start = max(1, $current_page - 2);
+                        $end = min($total_pages, $current_page + 2);
+                        if ($start > 1) echo '<span class=\'px-2\'>...</span>';
+                        for ($i=$start; $i<=$end; $i++) {
+                            $active = $i === $current_page;
+                            echo '<a href="' . $queryBase . $i . '" class="px-3 py-1 rounded border ' . ($active ? 'bg-blue-600 text-white border-blue-600' : 'text-gray-700 hover:bg-gray-50') . '">' . $i . '</a>';
+                        }
+                        if ($end < $total_pages) echo '<span class=\'px-2\'>...</span>';
+                    ?>
+                    <a href="<?php echo $nextDisabled ? '#' : $queryBase . ($current_page + 1); ?>" class="px-3 py-1 rounded border <?php echo $nextDisabled ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'; ?>">Next</a>
+                </div>
             </div>
         <?php else: ?>
             <div class="text-center py-12">
@@ -333,6 +367,12 @@ try {
     </div>
 
     <script>
+        function changePageSize(size) {
+            const params = new URLSearchParams(window.location.search);
+            params.set('size', size);
+            params.set('page', '1');
+            window.location.search = params.toString();
+        }
         function showAddForm() {
             document.getElementById('addDoctorForm').classList.remove('hidden');
             document.getElementById('editDoctorForm').classList.add('hidden');
@@ -346,12 +386,10 @@ try {
             document.getElementById('edit_doctor_id').value = doctor.doctor_id;
             document.getElementById('edit_name').value = doctor.name;
             document.getElementById('edit_specialization').value = doctor.specialization;
-            document.getElementById('edit_email').value = doctor.email;
-            document.getElementById('edit_phone').value = doctor.phone;
+            document.getElementById('edit_area').value = doctor.area || '';
+            document.getElementById('edit_contact').value = doctor.contact || '';
             document.getElementById('edit_address').value = doctor.address || '';
             document.getElementById('edit_availability').value = doctor.availability;
-            document.getElementById('edit_experience_years').value = doctor.experience_years || '';
-            document.getElementById('edit_qualifications').value = doctor.qualifications || '';
             
             document.getElementById('addDoctorForm').classList.add('hidden');
             document.getElementById('editDoctorForm').classList.remove('hidden');
@@ -379,4 +417,4 @@ try {
         }, 5000);
     </script>
 </body>
-</html>
+</html> 

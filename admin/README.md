@@ -1,193 +1,122 @@
-# Admin Management System - Caring Paws Veterinary Clinic
+# Admin Panel - PetVet System
 
-## Overview
-The Admin Management System provides comprehensive control over all aspects of the veterinary clinic operations. Administrators have full CRUD (Create, Read, Update, Delete) capabilities for managing users, doctors, patients, staff, and appointments.
+This directory contains the admin panel files for the PetVet veterinary clinic management system.
 
-## Features
+## Files Overview
 
-### 🔐 **User Management**
-- **Add New Users**: Create new user accounts with different roles (Regular User, Staff Member, Administrator)
-- **Edit Users**: Modify user information, change passwords, update roles and status
-- **Delete Users**: Remove user accounts (with protection against self-deletion)
-- **User Status Control**: Activate, deactivate, or suspend user accounts
-- **Role Management**: Assign and modify user roles and permissions
+- **dashboard.php** - Main admin dashboard with overview statistics
+- **staff.php** - Staff management (add, edit, delete staff members)
+- **doctors.php** - Doctor management
+- **patients.php** - Patient/pet management
+- **appointments.php** - Appointment scheduling and management
+- **medical_records.php** - Medical records management
+- **vaccine_records.php** - Vaccine records management
+- **adoption.php** - Pet adoption management
+- **users.php** - User account management
+- **notifications.php** - System notifications
+- **reports.php** - Various system reports
 
-### 👨‍⚕️ **Doctor Management**
-- **Add New Doctors**: Register new veterinary doctors with complete information
-- **Edit Doctor Details**: Update doctor information, contact details, and availability
-- **Delete Doctors**: Remove doctor records from the system
-- **Comprehensive Information**: Manage name, specialization, contact details, address, availability, experience, and qualifications
-- **Availability Status**: Track doctor availability (Available, Busy, Unavailable)
+## Database Setup
 
-### 🐕 **Patient Management**
-- **Add New Patients**: Register new animal patients with owner information
-- **Edit Patient Records**: Update patient details, medical history, and owner information
-- **Delete Patients**: Remove patient records from the system
-- **Owner Association**: Link patients to registered user accounts
-- **Medical Information**: Track species, breed, age, gender, weight, color, and medical history
+### Staff Table Setup
 
-### 👥 **Staff Management**
-- **Add New Staff**: Register new clinic staff members
-- **Edit Staff Information**: Update staff details, roles, and employment information
-- **Delete Staff**: Remove staff records from the system
-- **Role Assignment**: Assign specific roles (Receptionist, Veterinary Technician, Nurse, Assistant, Manager)
-- **Employment Details**: Track hire date, salary, department, and employment status
+Before using the staff management functionality, you need to create the staff table in your database:
 
-### 📊 **Dashboard Overview**
-- **Real-time Statistics**: View counts of users, doctors, patients, staff, and appointments
-- **Quick Actions**: Direct access to all management functions
-- **Recent Appointments**: Monitor latest appointment activities
-- **System Information**: Access system details and server information
-- **Auto-refresh**: Dashboard updates automatically every 30 seconds
+1. **Option 1: Run the SQL script directly**
+   ```sql
+   source admin/setup_staff.sql;
+   ```
 
-### 🚀 **Quick Access Features**
-- **Navigation Cards**: Easy access to all management sections
-- **Statistics Overview**: Visual representation of clinic data
-- **Action Buttons**: One-click access to add new records
-- **Status Indicators**: Color-coded status displays for better visibility
+2. **Option 2: Copy and paste the SQL commands**
+   Open your MySQL client (phpMyAdmin, MySQL Workbench, or command line) and run:
+   ```sql
+   CREATE TABLE IF NOT EXISTS `staff` (
+     `staff_id` int(11) NOT NULL AUTO_INCREMENT,
+     `name` varchar(255) NOT NULL,
+     `email` varchar(255) NOT NULL UNIQUE,
+     `phone` varchar(20) DEFAULT NULL,
+     `role` varchar(100) NOT NULL,
+     `password` varchar(255) NOT NULL,
+     `extra_info` text DEFAULT NULL,
+     `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
+     `updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+     PRIMARY KEY (`staff_id`),
+     UNIQUE KEY `email` (`email`)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+   ```
+
+## Staff Management Features
+
+The staff.php file provides the following functionality:
+
+### Add New Staff
+- Click "Add New Staff" button
+- Fill in the form with staff details
+- Set a password for staff login
+- Choose role from predefined options
+- Add optional extra information
+
+### Edit Staff
+- Click "Edit" button on any staff row
+- Modify staff information
+- Optionally change password
+- Update extra information
+
+### Delete Staff
+- Click "Delete" button on any staff row
+- Confirm deletion in the modal
+
+### Staff Roles Available
+- Receptionist
+- Veterinary Technician
+- Nurse
+- Assistant
+- Manager
+- Other
 
 ## Security Features
 
-### 🔒 **Access Control**
-- **Session Validation**: Ensures only logged-in administrators can access
-- **Role Verification**: Confirms admin privileges before allowing access
-- **Self-Protection**: Prevents administrators from deleting their own accounts
-- **Input Validation**: Secure form handling with proper sanitization
-
-### 🛡️ **Data Protection**
-- **Password Hashing**: Secure password storage using PHP password_hash()
-- **SQL Injection Prevention**: Prepared statements for all database queries
-- **XSS Protection**: HTML escaping for all user-generated content
-- **CSRF Protection**: Form-based security measures
-
-## Database Operations
-
-### 📝 **CRUD Operations**
-- **Create**: Add new records with validation
-- **Read**: Display existing records with filtering and sorting
-- **Update**: Modify existing records with change tracking
-- **Delete**: Remove records with confirmation dialogs
-
-### 🔍 **Data Validation**
-- **Email Uniqueness**: Prevents duplicate email addresses
-- **Required Fields**: Ensures all necessary information is provided
-- **Data Types**: Validates input formats (email, phone, dates, numbers)
-- **Relationship Integrity**: Maintains referential integrity across tables
-
-## User Interface
-
-### 🎨 **Modern Design**
-- **Tailwind CSS**: Responsive and modern styling
-- **Mobile Friendly**: Optimized for all device sizes
-- **Interactive Elements**: Hover effects and smooth transitions
-- **Color Coding**: Status-based color schemes for better UX
-
-### 📱 **Responsive Layout**
-- **Grid System**: Flexible layout that adapts to screen size
-- **Card Design**: Clean, organized information display
-- **Modal Dialogs**: Confirmation dialogs for destructive actions
-- **Form Validation**: Real-time feedback on form inputs
-
-## File Structure
-
-```
-admin/
-├── dashboard.php      # Main admin dashboard with overview
-├── users.php         # User management system
-├── doctors.php       # Doctor management system
-├── patients.php      # Patient management system
-├── staff.php         # Staff management system
-├── appointments.php  # Appointment management
-├── medical_records.php # Medical records system
-├── reports.php       # Reporting and analytics
-└── README.md         # This documentation file
-```
+- Password hashing using PHP's built-in `password_hash()` function
+- Session-based authentication
+- Admin-only access control
+- Input validation and sanitization
+- SQL injection prevention using prepared statements
 
 ## Usage Instructions
 
-### 1. **Accessing the Admin Panel**
-- Login with admin credentials
-- Navigate to the admin dashboard
-- Use the quick action buttons for common tasks
-
-### 2. **Adding New Records**
-- Click the "Add New" button for the desired section
-- Fill in the required information
-- Submit the form to create the record
-
-### 3. **Editing Existing Records**
-- Click the "Edit" button next to any record
-- Modify the information as needed
-- Submit to update the record
-
-### 4. **Deleting Records**
-- Click the "Delete" button next to any record
-- Confirm the deletion in the modal dialog
-- Record will be permanently removed
-
-### 5. **Managing Users**
-- Create new user accounts with appropriate roles
-- Set user status (active, inactive, suspended)
-- Modify user permissions and access levels
-
-## Technical Requirements
-
-### 🖥️ **Server Requirements**
-- PHP 7.4 or higher
-- MySQL 5.7 or higher
-- PDO extension enabled
-- Session support enabled
-
-### 📦 **Dependencies**
-- Tailwind CSS (CDN)
-- Chart.js (CDN)
-- Modern web browser with JavaScript enabled
-
-### 🔧 **Configuration**
-- Database connection in `../config.php`
-- Proper table structure for all entities
-- Session management configured
-
-## Best Practices
-
-### 📋 **Data Management**
-- Always validate input data before processing
-- Use prepared statements for database queries
-- Implement proper error handling and user feedback
-- Maintain data consistency across related tables
-
-### 🔐 **Security**
-- Regularly update admin passwords
-- Monitor user access and permissions
-- Log administrative actions for audit trails
-- Implement rate limiting for sensitive operations
-
-### 📊 **Performance**
-- Optimize database queries for large datasets
-- Implement pagination for extensive record lists
-- Use caching for frequently accessed data
-- Monitor system performance and resource usage
+1. **Access**: Navigate to `/admin/staff.php` (must be logged in as admin)
+2. **Add Staff**: Click "Add New Staff" and fill the form
+3. **Edit Staff**: Click "Edit" on any staff row
+4. **Delete Staff**: Click "Delete" and confirm
+5. **Pagination**: Use the pagination controls to navigate through large staff lists
+6. **Page Size**: Adjust the number of staff members displayed per page
 
 ## Troubleshooting
 
-### ❌ **Common Issues**
-- **Session Expired**: Re-login to restore access
-- **Database Errors**: Check connection and table structure
-- **Permission Denied**: Verify admin role and privileges
-- **Form Submission Issues**: Check required fields and validation
+### Common Issues
 
-### 🔧 **Maintenance**
-- Regular database backups
-- Monitor system logs for errors
-- Update software dependencies
-- Test functionality after system changes
+1. **"Database connection failed"**
+   - Check your database credentials in `../config.php`
+   - Ensure MySQL service is running
+   - Verify database name exists
 
-## Support and Updates
+2. **"Table 'staff' doesn't exist"**
+   - Run the setup_staff.sql script
+   - Check if the table was created successfully
 
-For technical support or feature requests, contact the development team. The system is designed to be easily extensible for additional features and integrations.
+3. **"Access denied"**
+   - Ensure you're logged in as an admin user
+   - Check session variables and user type
 
----
+4. **Form not submitting**
+   - Check browser console for JavaScript errors
+   - Verify all required fields are filled
+   - Check PHP error logs for server-side issues
 
-**Version**: 2.0  
-**Last Updated**: December 2024  
-**Maintained By**: Development Team 
+## Notes
+
+- Default sample staff passwords are set to 'password' - change these in production
+- Email addresses must be unique across all staff members
+- Phone numbers are optional but recommended
+- Extra information field can store qualifications, special skills, or notes
+- All timestamps are automatically managed by the database 
