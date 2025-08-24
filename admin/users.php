@@ -28,12 +28,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($stmt->fetchColumn() > 0) {
                         $error_message = "Email already exists!";
                     } else {
+                        // Generate a unique user_id that won't conflict with deleted users
+                        $stmt = $pdo->prepare('SELECT MAX(user_id) as max_id FROM users');
+                        $stmt->execute();
+                        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                        $next_user_id = ($result['max_id'] ?? 0) + 1;
+                        
                         $stmt = $pdo->prepare("
-                            INSERT INTO users (name, email, phone, password, address)
-                            VALUES (?, ?, ?, ?, ?)
+                            INSERT INTO users (user_id, name, email, phone, password, address)
+                            VALUES (?, ?, ?, ?, ?, ?)
                         ");
                         $hashed_password = password_hash($_POST['password'], PASSWORD_DEFAULT);
                         $stmt->execute([
+                            $next_user_id,
                             $_POST['name'],
                             $_POST['email'],
                             $_POST['phone'],

@@ -13,7 +13,7 @@ This directory contains the admin panel files for the PetVet veterinary clinic m
 - **vaccine_records.php** - Vaccine records management
 - **adoption.php** - Pet adoption management
 - **users.php** - User account management
-- **notifications.php** - System notifications
+- **notifications.php** - System notifications management (send, view, manage)
 - **reports.php** - Various system reports
 
 ## Database Setup
@@ -21,6 +21,24 @@ This directory contains the admin panel files for the PetVet veterinary clinic m
 ### Staff Table Setup
 
 Before using the staff management functionality, you need to create the staff table in your database:
+
+### Notifications Table Setup
+
+Before using the notification management functionality, you need to create/update the notifications table in your database:
+
+1. **Option 1: Run the SQL script directly**
+   ```sql
+   source admin/setup_notifications.sql;
+   ```
+
+2. **Option 2: Copy and paste the SQL commands**
+   Open your MySQL client (phpMyAdmin, MySQL Workbench, or command line) and run the commands from `setup_notifications.sql`.
+
+The notifications system supports:
+- Different notification types (general, appointment, medical, vaccine, adoption, billing, urgent)
+- Multiple audiences (all users & staff, users only, staff only, specific user, specific staff member)
+- Read tracking for analytics
+- Timestamp management
 
 1. **Option 1: Run the SQL script directly**
    ```sql
@@ -48,6 +66,35 @@ Before using the staff management functionality, you need to create the staff ta
 ## Staff Management Features
 
 The staff.php file provides the following functionality:
+
+## Notification Management Features
+
+The notifications.php file provides the following functionality:
+
+### Send New Notifications
+- **Message**: Enter notification content (required)
+- **Type**: Choose from predefined categories (general, appointment, medical, vaccine, adoption, billing, urgent)
+- **Audience**: Select target audience:
+  - All Users & Staff: Broadcast to everyone
+  - All Users Only: Send to all registered users
+  - All Staff Only: Send to all staff members
+  - Specific User: Target a specific user
+  - Specific Staff Member: Target a specific staff member
+
+### View Notification Analytics
+- Track read statistics for each notification
+- See how many users, staff, and admins have read each notification
+- View notification history with timestamps
+- Monitor notification types and audiences
+
+### Notification Types Available
+- **General**: General announcements and information
+- **Appointment**: Appointment-related notifications
+- **Medical**: Medical record updates and alerts
+- **Vaccine**: Vaccination reminders and schedules
+- **Adoption**: Pet adoption status updates
+- **Billing**: Payment and billing notifications
+- **Urgent**: Important time-sensitive alerts
 
 ### Add New Staff
 - Click "Add New Staff" button
@@ -84,12 +131,20 @@ The staff.php file provides the following functionality:
 
 ## Usage Instructions
 
+### Staff Management
 1. **Access**: Navigate to `/admin/staff.php` (must be logged in as admin)
 2. **Add Staff**: Click "Add New Staff" and fill the form
 3. **Edit Staff**: Click "Edit" on any staff row
 4. **Delete Staff**: Click "Delete" and confirm
 5. **Pagination**: Use the pagination controls to navigate through large staff lists
 6. **Page Size**: Adjust the number of staff members displayed per page
+
+### Notification Management
+1. **Access**: Navigate to `/admin/notifications.php` (must be logged in as admin)
+2. **Send Notifications**: Fill out the notification form and click "Send Notification"
+3. **Target Audience**: Choose the appropriate audience for your notification
+4. **View Analytics**: Monitor read statistics and notification history
+5. **Notification Types**: Use appropriate categories for better organization
 
 ## Troubleshooting
 

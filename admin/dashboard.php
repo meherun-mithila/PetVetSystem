@@ -340,6 +340,9 @@ try {
                     <a href="vaccine_records.php" class="block w-full bg-orange-600 text-white text-center px-4 py-2 rounded hover:bg-orange-700">
                          Vaccine Records
                     </a>
+                    <a href="verified_emails.php" class="block w-full bg-indigo-600 text-white text-center px-4 py-2 rounded hover:bg-indigo-700">
+                        View Verified Emails
+                    </a>
                     <button onclick="showSystemInfo()" class="block w-full bg-teal-600 text-white text-center px-4 py-2 rounded hover:bg-teal-700">
                         System Info
                     </button>
