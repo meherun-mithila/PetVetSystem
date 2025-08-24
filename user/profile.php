@@ -163,46 +163,45 @@ if ($_POST) {
                     if (!$valid) {
                         $error_message = 'Incorrect password.';
                     } else {
-                        // Check dependent records: patients owned and appointments through patients
-                        $petCountStmt = $pdo->prepare('SELECT COUNT(*) FROM patients WHERE owner_id = ?');
-                        try { $petCountStmt->execute([$user_id]); } catch (Throwable $e) { $petCountStmt = null; }
-                        $pet_count = $petCountStmt ? (int)$petCountStmt->fetchColumn() : 0;
+                        // Allow account deletion anytime - remove restrictions
+                        $pdo->beginTransaction();
+                        try {
+                            // Delete related OTPs
+                            $delOtps = $pdo->prepare('DELETE FROM email_otps WHERE user_id = ?');
+                            $delOtps->execute([$user_id]);
 
-                        $apptCountStmt = $pdo->prepare('SELECT COUNT(*) FROM appointments a JOIN patients p ON a.patient_id = p.patient_id WHERE p.owner_id = ?');
-                        try { $apptCountStmt->execute([$user_id]); } catch (Throwable $e) { $apptCountStmt = null; }
-                        $appointment_count = $apptCountStmt ? (int)$apptCountStmt->fetchColumn() : 0;
-
-                        if ($pet_count > 0 || $appointment_count > 0) {
-                            $error_message = "Cannot delete account. You have $pet_count pet(s) and $appointment_count appointment(s) associated with this account.";
-                        } else {
-                            $pdo->beginTransaction();
+                            // Delete any legacy verification records if table exists
                             try {
-                                // Delete related OTPs
-                                $delOtps = $pdo->prepare('DELETE FROM email_otps WHERE user_id = ?');
-                                $delOtps->execute([$user_id]);
+                                $delVer = $pdo->prepare('DELETE FROM email_verifications WHERE user_id = ?');
+                                $delVer->execute([$user_id]);
+                            } catch (Throwable $e) { /* table may not exist */ }
 
-                                // Delete any legacy verification records if table exists
-                                try {
-                                    $delVer = $pdo->prepare('DELETE FROM email_verifications WHERE user_id = ?');
-                                    $delVer->execute([$user_id]);
-                                } catch (Throwable $e) { /* table may not exist */ }
+                            // Delete pets and appointments first (cascade delete)
+                            try {
+                                $delPets = $pdo->prepare('DELETE FROM patients WHERE owner_id = ?');
+                                $delPets->execute([$user_id]);
+                            } catch (Throwable $e) { }
 
-                                // Finally delete the user
-                                $delUser = $pdo->prepare('DELETE FROM users WHERE user_id = ?');
-                                $delUser->execute([$user_id]);
+                            try {
+                                $delAppts = $pdo->prepare('DELETE FROM appointments a JOIN patients p ON a.patient_id = p.patient_id WHERE p.owner_id = ?');
+                                $delAppts->execute([$user_id]);
+                            } catch (Throwable $e) { }
 
-                                $pdo->commit();
+                            // Finally delete the user
+                            $delUser = $pdo->prepare('DELETE FROM users WHERE user_id = ?');
+                            $delUser->execute([$user_id]);
 
-                                // Logout and redirect
-                                session_destroy();
-                                session_start();
-                                $_SESSION['verification_success'] = 'Account deleted successfully.';
-                                header('Location: ../index.php');
-                                exit;
-                            } catch (Throwable $e) {
-                                $pdo->rollBack();
-                                $error_message = 'Account deletion failed. Please try again later.';
-                            }
+                            $pdo->commit();
+
+                            // Logout and redirect
+                            session_destroy();
+                            session_start();
+                            $_SESSION['verification_success'] = 'Account deleted successfully.';
+                            header('Location: ../index.php');
+                            exit;
+                        } catch (Throwable $e) {
+                            $pdo->rollBack();
+                            $error_message = 'Account deletion failed. Please try again later.';
                         }
                     }
                 }

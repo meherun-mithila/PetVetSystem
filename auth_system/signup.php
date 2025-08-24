@@ -29,14 +29,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				$pdo->rollBack();
 				$error_message = 'An account with this email already exists.';
 			} else {
+				// Generate a unique user_id that won't conflict with deleted users
+				$stmt = $pdo->prepare('SELECT MAX(user_id) as max_id FROM users');
+				$stmt->execute();
+				$result = $stmt->fetch(PDO::FETCH_ASSOC);
+				$next_user_id = ($result['max_id'] ?? 0) + 1;
+				
 				$hashed = password_hash($password, PASSWORD_DEFAULT);
-				// Create new user (keep is_verified default/0 if present)
+				// Create new user with explicit user_id to prevent reuse
 				try {
-					$insert = $pdo->prepare('INSERT INTO users (name, email, password, is_verified) VALUES (?, ?, ?, 0)');
-					$insert->execute([$name, $email, $hashed]);
+					$insert = $pdo->prepare('INSERT INTO users (user_id, name, email, password, is_verified) VALUES (?, ?, ?, ?, 0)');
+					$insert->execute([$next_user_id, $name, $email, $hashed]);
 				} catch (PDOException $e) {
-					$insert = $pdo->prepare('INSERT INTO users (name, email, password) VALUES (?, ?, ?)');
-					$insert->execute([$name, $email, $hashed]);
+					$insert = $pdo->prepare('INSERT INTO users (user_id, name, email, password) VALUES (?, ?, ?, ?)');
+					$insert->execute([$next_user_id, $name, $email, $hashed]);
 				}
 
 				$pdo->commit();

@@ -475,16 +475,6 @@ try {
                     >
                 </div>
 
-                <div class="flex items-center justify-between">
-                    <label class="flex items-center">
-                        <input type="checkbox" name="remember" class="w-4 h-4 text-vet-blue bg-gray-100 border-gray-300 rounded focus:ring-vet-blue">
-                        <span class="ml-2 text-sm text-gray-600">Remember me</span>
-                    </label>
-                    <a href="#" class="text-sm text-vet-blue hover:text-vet-dark-blue transition-colors">
-                        Forgot password?
-                    </a>
-                </div>
-
                 <button 
                     type="submit" 
                     class="w-full bg-vet-blue hover:bg-vet-dark-blue text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200"

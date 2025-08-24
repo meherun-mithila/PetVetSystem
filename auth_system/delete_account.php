@@ -23,35 +23,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				if (!$valid) {
 					$error_message = 'Incorrect password.';
 				} else {
-					// Prevent accidental deletion if there are dependent records
-					$petCountStmt = $pdo->prepare('SELECT COUNT(*) FROM pets WHERE user_id = ?');
-					try { $petCountStmt->execute([$user['user_id']]); } catch (Throwable $e) { $petCountStmt = null; }
-					$pet_count = $petCountStmt ? (int)$petCountStmt->fetchColumn() : 0;
+					// Allow account deletion anytime - remove restrictions
+					$pdo->beginTransaction();
+					try {
+						// Delete related OTPs
+						$delOtps = $pdo->prepare('DELETE FROM email_otps WHERE user_id = ?');
+						$delOtps->execute([$user['user_id']]);
 
-					$apptCountStmt = $pdo->prepare('SELECT COUNT(*) FROM appointments WHERE user_id = ?');
-					try { $apptCountStmt->execute([$user['user_id']]); } catch (Throwable $e) { $apptCountStmt = null; }
-					$appointment_count = $apptCountStmt ? (int)$apptCountStmt->fetchColumn() : 0;
+						$delVer = $pdo->prepare('DELETE FROM email_verifications WHERE user_id = ?');
+						try { $delVer->execute([$user['user_id']]); } catch (Throwable $e) { }
 
-					if ($pet_count > 0 || $appointment_count > 0) {
-						$error_message = "Cannot delete account. You have $pet_count pet(s) and $appointment_count appointment(s) associated with this account.";
-					} else {
-						$pdo->beginTransaction();
+						// Delete pets and appointments first (cascade delete)
 						try {
-							$delOtps = $pdo->prepare('DELETE FROM email_otps WHERE user_id = ?');
-							$delOtps->execute([$user['user_id']]);
+							$delPets = $pdo->prepare('DELETE FROM pets WHERE user_id = ?');
+							$delPets->execute([$user['user_id']]);
+						} catch (Throwable $e) { }
 
-							$delVer = $pdo->prepare('DELETE FROM email_verifications WHERE user_id = ?');
-							try { $delVer->execute([$user['user_id']]); } catch (Throwable $e) { }
+						try {
+							$delAppts = $pdo->prepare('DELETE FROM appointments WHERE user_id = ?');
+							$delAppts->execute([$user['user_id']]);
+						} catch (Throwable $e) { }
 
-							$delUser = $pdo->prepare('DELETE FROM users WHERE user_id = ?');
-							$delUser->execute([$user['user_id']]);
+						// Finally delete the user
+						$delUser = $pdo->prepare('DELETE FROM users WHERE user_id = ?');
+						$delUser->execute([$user['user_id']]);
 
-							$pdo->commit();
-							$success_message = 'Account deleted successfully.';
-						} catch (Throwable $e) {
-							$pdo->rollBack();
-							$error_message = 'Account deletion failed. Please try again later.';
-						}
+						$pdo->commit();
+						$success_message = 'Account deleted successfully.';
+					} catch (Throwable $e) {
+						$pdo->rollBack();
+						$error_message = 'Account deletion failed. Please try again later.';
 					}
 				}
 			}
